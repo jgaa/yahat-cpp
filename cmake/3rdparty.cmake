@@ -11,9 +11,9 @@ include_directories($<BUILD_INTERFACE:${EXTERNAL_PROJECTS_INSTALL_PREFIX}/${CMAK
 if (YAHAT_WITH_LOGFAULT)
     find_path(LOGFAULT_DIR NAMES logfault.h PATH_SUFFIXES logfault)
     if (NOT LOGFAULT_DIR STREQUAL "LOGFAULT-NOTFOUND" )
-        message ("Using existing logfault")
+        message ("Using existing logfault at: ${LOGFAULT_DIR}")
         add_library(logfault INTERFACE IMPORTED)
-        include_directories(LOGFAULT)
+        include_directories(${LOGFAULT_DIR})
     else()
         message ("Embedding logfault header only library")
         ExternalProject_Add(logfault
