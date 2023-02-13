@@ -320,7 +320,7 @@ void DoSession(streamT& streamPtr,
 } // ns
 
 
-HttpServer::HttpServer(const Config &config, authenticator_t authHandler)
+HttpServer::HttpServer(const HttpConfig &config, authenticator_t authHandler)
     : config_{config}, authenticator_(std::move(authHandler))
 {
 

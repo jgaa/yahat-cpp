@@ -14,14 +14,27 @@
 
 namespace yahat {
 
-struct Config {
-    // HTTP
-
+struct HttpConfig {
+    /*! Number of threads for the API and UI.
+     *  Note that db and file access
+     *  is syncronous, so even if the HTTP server is
+     *  asyncroneous, we need some
+     *  extra threads to wait for slow IO to complete.
+     */
     size_t num_http_threads = 6;
 
+    /*! Ip address or hostname for the REST API endpoint */
     std::string http_endpoint;
-    std::string http_port; // Only required for non-standard ports
+
+    /*! HTTP port
+     *
+     *  Only required for non-standard ports
+     */
+    std::string http_port;
+
+    /*! Path to the TLS key-file if HTTPS is used */
     std::string http_tls_key;
+    /*! Path to the TLS cert-file if HTTPS is used */
     std::string http_tls_cert;
 };
 
@@ -158,7 +171,7 @@ class HttpServer
 public:
     using handler_t = std::shared_ptr<RequestHandler>;//std::function<Response (const Request& req)>;
 
-    HttpServer(const Config& config, authenticator_t authHandler);
+    HttpServer(const HttpConfig& config, authenticator_t authHandler);
 
     /*! Starts the server and returns immediately */
     std::future<void> start();
@@ -207,7 +220,7 @@ public:
 private:
     void startWorkers();
 
-    const Config& config_;
+    const HttpConfig& config_;
     const authenticator_t authenticator_;
     std::map<std::string, handler_t> routes_;
     boost::asio::io_context ctx_;

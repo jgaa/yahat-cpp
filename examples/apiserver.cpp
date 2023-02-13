@@ -10,7 +10,7 @@
 using namespace std;
 using namespace yahat;
 
-Config config;
+HttpConfig config;
 std::string log_level = "info";
 
 namespace po = boost::program_options;
@@ -35,7 +35,7 @@ public:
 };
 
 int main(int argc, char* argv[]) {
-    Config config;
+    HttpConfig config;
     std::string log_level = "info";
 
     namespace po = boost::program_options;
