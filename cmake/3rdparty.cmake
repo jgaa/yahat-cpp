@@ -9,10 +9,11 @@ link_directories(${EXTERNAL_PROJECTS_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
 include_directories($<BUILD_INTERFACE:${EXTERNAL_PROJECTS_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}>)
 
 if (YAHAT_WITH_LOGFAULT)
-    find_path(HAVE_LOGFAULT logfault/logfault.h)
-    if (HAVE_LOGFAULT)
+    find_path(LOGFAULT_DIR NAMES logfault.h PATH_SUFFIXES logfault)
+    if (NOT LOGFAULT_DIR STREQUAL "LOGFAULT-NOTFOUND" )
         message ("Using existing logfault")
         add_library(logfault INTERFACE IMPORTED)
+        include_directories(LOGFAULT)
     else()
         message ("Embedding logfault header only library")
         ExternalProject_Add(logfault
