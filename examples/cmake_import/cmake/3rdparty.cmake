@@ -36,3 +36,4 @@ ExternalProject_Add(externalYahat
         -DLOGFAULT_ROOT='${EXTERNAL_PROJECTS_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}'
 )
 
+add_dependencies(externalYahat logfault)
