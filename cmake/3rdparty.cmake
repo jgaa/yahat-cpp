@@ -10,6 +10,7 @@ include_directories($<BUILD_INTERFACE:${EXTERNAL_PROJECTS_INSTALL_PREFIX}/${CMAK
 
 if (YAHAT_WITH_LOGFAULT)
     if (LOGFAULT_ROOT)
+        message("LOGFAULT_ROOT: ${LOGFAULT_ROOT}")
         list(APPEND CMAKE_PREFIX_PATH "${LOGFAULT_ROOT}")
     endif()
     find_path(LOGFAULT_DIR NAMES logfault.h PATH_SUFFIXES logfault)
