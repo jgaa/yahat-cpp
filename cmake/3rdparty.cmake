@@ -31,6 +31,7 @@ if (YAHAT_WITH_LOGFAULT)
                 -DCMAKE_INSTALL_PREFIX=${EXTERNAL_PROJECTS_INSTALL_PREFIX}
                 -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
                 -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+                -DCMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}'
         )
     endif() # embed
 endif() # use logfault
