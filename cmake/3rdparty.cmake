@@ -16,7 +16,10 @@ if (YAHAT_WITH_LOGFAULT)
     if (NOT LOGFAULT_DIR STREQUAL "LOGFAULT_DIR-NOTFOUND" )
         message ("Using existing logfault at: ${LOGFAULT_DIR}")
         add_library(logfault INTERFACE IMPORTED)
-        include_directories(${LOGFAULT_DIR})
+        cmake_path(GET LOGFAULT_DIR PARENT_PATH logfault_include_dir)
+        message ("Adding include path: ${logfault_include_dir}")
+        include_directories(${logfault_include_dir})
+
     else()
         message ("Embedding logfault header only library")
         ExternalProject_Add(logfault
