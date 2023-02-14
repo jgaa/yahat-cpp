@@ -10,10 +10,13 @@ include_directories($<BUILD_INTERFACE:${EXTERNAL_PROJECTS_INSTALL_PREFIX}/${CMAK
 
 if (YAHAT_WITH_LOGFAULT)
     if (LOGFAULT_ROOT)
+        # Assume that we are using a library that might not be available yet
         message("LOGFAULT_ROOT: ${LOGFAULT_ROOT}")
-        list(APPEND CMAKE_PREFIX_PATH "${LOGFAULT_ROOT}")
+        set(LOGFAULT_DIR, "${LOGFAULT_ROOT}")
+        include_directories(${LOGFAULT_DIR})
+    else()
+        find_path(LOGFAULT_DIR NAMES logfault.h PATH_SUFFIXES logfault)
     endif()
-    find_path(LOGFAULT_DIR NAMES logfault.h PATH_SUFFIXES logfault)
     message("LOGFAULT_DIR: " ${LOGFAULT_DIR})
     if (NOT LOGFAULT_DIR STREQUAL "LOGFAULT_DIR-NOTFOUND" )
         message ("Using existing logfault at: ${LOGFAULT_DIR}")
