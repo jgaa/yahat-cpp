@@ -13,9 +13,6 @@ project(yahat VERSION ${YAHAT_VERSION} LANGUAGES CXX)
 set(YAHAT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
-# We create a configuration file so that other code that include our header files gets the correct configuration.
-CONFIGURE_FILE(config.h.in ${CMAKE_BINARY_DIR}/generated-include/${PROJECT_NAME}/config.h)
-
 option(YAHAT_SILENCE_BOOST_DEPRICATED_MESSAGES "Allows us to avoid warnings (mostly) because asio is not updated between boost versions" ON)
 if(YAHAT_SILENCE_BOOST_DEPRICATED_MESSAGES)
     add_definitions(-DBOOST_ALLOW_DEPRECATED_HEADERS=1)
@@ -56,8 +53,15 @@ add_library(${PROJECT_NAME}
     )
 
 if (YAHAT_WITH_LOGFAULT)
+    message("Using logfault for logging")
    add_dependencies(${PROJECT_NAME} logfault)
+else()
+    message("Using default wrapper for logging")
 endif()
+
+# We create a configuration file so that other code that include our header files gets the correct configuration.
+CONFIGURE_FILE(config.h.in ${CMAKE_BINARY_DIR}/generated-include/${PROJECT_NAME}/config.h)
+
 
 target_include_directories(${PROJECT_NAME}
     PUBLIC
