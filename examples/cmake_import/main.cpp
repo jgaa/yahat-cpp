@@ -100,8 +100,6 @@ int main(int argc, char* argv[]) {
 
     logfault::LogManager::Instance().AddHandler(
                 make_unique<logfault::StreamHandler>(clog, llevel));
-
-    LOG_INFO << filesystem::path(argv[0]).stem().string() << ' ' << YAHAT_VERSION  " starting up. Log level: " << log_level;
 #else
     auto llevel = LogLevel::INFO;
     if (log_level == "debug") {
@@ -128,6 +126,8 @@ int main(int argc, char* argv[]) {
                   << msg << std::endl;
     });
 #endif
+
+    LOG_INFO << filesystem::path(argv[0]).stem().string() << ' ' << HttpServer::version() << " starting up. Log level: " << log_level;
 
     try {
         HttpServer apiserver{config, [](const AuthReq& ar) {
