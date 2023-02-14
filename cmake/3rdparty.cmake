@@ -12,7 +12,7 @@ if (YAHAT_WITH_LOGFAULT)
     if (LOGFAULT_ROOT)
         # Assume that we are using a library that might not be available yet
         message("LOGFAULT_ROOT: ${LOGFAULT_ROOT}")
-        set(LOGFAULT_DIR, "${LOGFAULT_ROOT}")
+        set(LOGFAULT_DIR ${LOGFAULT_ROOT})
         include_directories(${LOGFAULT_DIR})
     else()
         find_path(LOGFAULT_DIR NAMES logfault.h PATH_SUFFIXES logfault)
