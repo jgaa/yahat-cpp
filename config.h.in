@@ -1,0 +1,4 @@
+#pragma once
+
+#cmakedefine YAHAT_WITH_LOGFAULT ${YAHAT_WITH_LOGFAULT}
+

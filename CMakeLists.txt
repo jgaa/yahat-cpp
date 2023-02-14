@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.18)
 
 #option(YAHAT_WITH_TESTS "Compile tests" OFF)
 option(YAHAT_WITH_EXAMPLES "Compile examples" ON)
-option(YAHAT_WITH_LOGFAULT "Use logfault" ON)
+option(YAHAT_WITH_LOGFAULT "Use logfault" OFF)
 
 if (NOT DEFINED _VERSION)
     set(YAHAT_VERSION 0.0.1)
@@ -12,6 +12,9 @@ add_definitions(-DYAHAT_VERSION=\"${YAHAT_VERSION}\")
 project(yahat VERSION ${YAHAT_VERSION} LANGUAGES CXX)
 set(YAHAT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+
+# We create a configuration file so that other code that include our header files gets the correct configuration.
+CONFIGURE_FILE(config.h.in ${CMAKE_BINARY_DIR}/generated-include/${PROJECT_NAME}/config.h)
 
 option(YAHAT_SILENCE_BOOST_DEPRICATED_MESSAGES "Allows us to avoid warnings (mostly) because asio is not updated between boost versions" ON)
 if(YAHAT_SILENCE_BOOST_DEPRICATED_MESSAGES)
@@ -61,6 +64,7 @@ target_include_directories(${PROJECT_NAME}
       $<BUILD_INTERFACE:${Boost_INCLUDE_DIR}>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated-include>
     INTERFACE
       $<INSTALL_INTERFACE:include>
 )
@@ -77,6 +81,11 @@ install(TARGETS ${PROJECT_NAME}
 
 # Tell CMake how to deal with the public API headers
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/include/yahat" # source directory
+        DESTINATION "include" # target directory
+        )
+
+# Tell CMake how to deal with the public API headers
+install(DIRECTORY "${${CMAKE_BINARY_DIR}/generated-include}/yahat" # source directory
         DESTINATION "include" # target directory
         )
 

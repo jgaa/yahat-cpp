@@ -10,7 +10,7 @@
 #include <boost/asio/spawn.hpp>
 #include <boost/uuid/uuid.hpp>
 
-//#include "eventsd.h"
+#include "yahat/config.h"
 
 namespace yahat {
 
