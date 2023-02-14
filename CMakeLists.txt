@@ -56,21 +56,26 @@ if (YAHAT_WITH_LOGFAULT)
    add_dependencies(${PROJECT_NAME} logfault)
 endif()
 
-target_include_directories(${PROJECT_NAME} PUBLIC
-    $<BUILD_INTERFACE:${Boost_INCLUDE_DIR}>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/include
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+target_include_directories(${PROJECT_NAME}
+    PUBLIC
+      $<BUILD_INTERFACE:${Boost_INCLUDE_DIR}>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    INTERFACE
+      $<INSTALL_INTERFACE:include>
 )
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
 
-
-install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}
+# Tell CMake how to install the binary library, and what to EXPORT
+install(TARGETS ${PROJECT_NAME}
+    EXPORT ${PROJECT_NAME}
     ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
     )  # This is for Windows
 
+# Tell CMake how to deal with the public API headers
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/include/yahat" # source directory
         DESTINATION "include" # target directory
         )
@@ -96,3 +101,29 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC -DBOOST_COROUTINE_NO_DEPRECATI
 if (YAHAT_WITH_EXAMPLES)
     add_subdirectory(examples)
 endif()
+
+# Generate and export a configuration file to make the project easily
+# importable in other CMake projects
+install(EXPORT ${PROJECT_NAME}
+  FILE ${PROJECT_NAME}.cmake
+  DESTINATION lib/cmake/${PROJECT_NAME}
+)
+
+include(CMakePackageConfigHelpers)
+# generate the config file that includes the exports
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.cmake"
+  INSTALL_DESTINATION "lib/cmake/${PROJECT_NAME}"
+  NO_SET_AND_CHECK_MACRO
+  NO_CHECK_REQUIRED_COMPONENTS_MACRO
+  )
+
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.cmake"
+  VERSION "${yahat_VERSION_MAJOR}.${yahat_VERSION_MINOR}"
+  COMPATIBILITY AnyNewerVersion
+)
+
+#export(EXPORT ${PROJECT_NAME}
+#  FILE "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.cmake"
+#)

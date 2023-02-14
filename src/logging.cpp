@@ -19,6 +19,4 @@ LogEvent::~LogEvent()
 
 }
 
-
-
 #endif
