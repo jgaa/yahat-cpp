@@ -40,6 +40,8 @@ include(cmake/3rdparty.cmake)
 # Normal CMAKE declaration of the binary we require
 add_executable(${PROJECT_NAME} main.cpp)
 
+add_dependencies(${PROJECT_NAME} externalYahat)
+
 # Link libraries
 target_link_libraries(${PROJECT_NAME}
     yahat

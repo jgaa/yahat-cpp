@@ -186,6 +186,8 @@ public:
 
     void addRoute(std::string_view target, handler_t handler);
 
+    static std::string_view version() noexcept;
+
     std::pair<bool, std::string_view /* user name */> Authenticate(const std::string_view& authHeader);
 
     // Called by the HTTP server implementation template

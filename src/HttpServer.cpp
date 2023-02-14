@@ -452,6 +452,11 @@ void HttpServer::run()
     future.get();
 }
 
+string_view HttpServer::version() const noexcept
+{
+    return YAHAT_VERSION;
+}
+
 void HttpServer::stop()
 {
     ctx_.stop();

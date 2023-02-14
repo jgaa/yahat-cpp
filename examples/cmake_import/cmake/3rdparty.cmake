@@ -8,7 +8,7 @@ include(ExternalProject)
 link_directories(${EXTERNAL_PROJECTS_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
 include_directories($<BUILD_INTERFACE:${EXTERNAL_PROJECTS_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}>)
 
-ExternalProject_Add(yahat
+ExternalProject_Add(externalYahat
     PREFIX "${EXTERNAL_PROJECTS_PREFIX}"
     #GIT_REPOSITORY "https://github.com/jgaa/yahat-cpp.git"
     GIT_REPOSITORY "/home/jgaa/src/yahat-cpp"
