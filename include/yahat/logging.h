@@ -1,5 +1,7 @@
 #pragma once
 
+#include "yahat/config.h"
+
 #ifdef USE_LOGFAULT
 #include "logfault/logfault.h"
 

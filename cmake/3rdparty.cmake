@@ -26,5 +26,4 @@ if (YAHAT_WITH_LOGFAULT)
                 -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
         )
     endif() # embed
-    add_compile_definitions(USE_LOGFAULT)
 endif() # use logfault

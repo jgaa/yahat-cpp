@@ -85,7 +85,6 @@ int main(int argc, char* argv[]) {
         return -2;
     }
 
-#ifdef USE_LOGFAULT
     auto llevel = logfault::LogLevel::INFO;
     if (log_level == "debug") {
         llevel = logfault::LogLevel::DEBUGGING;
@@ -102,18 +101,6 @@ int main(int argc, char* argv[]) {
                 make_unique<logfault::StreamHandler>(clog, llevel));
 
     LOG_INFO << filesystem::path(argv[0]).stem().string() << ' ' << YAHAT_VERSION  " starting up. Log level: " << log_level;
-#else
-    auto llevel = LogLevel::INFO;
-    if (log_level == "debug") {
-        llevel = LogLevel::DEBUG;
-    } else if (log_level == "trace") {
-        llevel = LogLevel::TRACE;
-    } else if (log_level == "info") {
-        ;  // Do nothing
-    } else {
-        std::cerr << "Unknown log-level: " << log_level << std::endl;
-        return 1;
-    }
 
     Logger::Instance().SetLogLevel(llevel);
     Logger::Instance().SetHandler([](LogLevel level,
@@ -127,7 +114,6 @@ int main(int argc, char* argv[]) {
                   << ' ' << std::this_thread::get_id() << ' '
                   << msg << std::endl;
     });
-#endif
 
     try {
         HttpServer apiserver{config, [](const AuthReq& ar) {
