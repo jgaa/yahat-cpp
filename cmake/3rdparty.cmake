@@ -8,7 +8,7 @@ include(ExternalProject)
 link_directories(${EXTERNAL_PROJECTS_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
 include_directories($<BUILD_INTERFACE:${EXTERNAL_PROJECTS_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}>)
 
-if (YAHAT_WITH_LOGFAULT)
+if (USE_LOGFAULT)
     if (LOGFAULT_ROOT)
         # Assume that we are using a library that might not be available yet
         message("LOGFAULT_ROOT: ${LOGFAULT_ROOT}")

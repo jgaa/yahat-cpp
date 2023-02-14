@@ -1,4 +1,4 @@
 #pragma once
 
-#cmakedefine USE_LOGFAULT ${YAHAT_WITH_LOGFAULT}
+#cmakedefine USE_LOGFAULT
 

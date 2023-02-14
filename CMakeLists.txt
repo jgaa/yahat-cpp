@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.18)
 
 #option(YAHAT_WITH_TESTS "Compile tests" OFF)
 option(YAHAT_WITH_EXAMPLES "Compile examples" ON)
-option(YAHAT_WITH_LOGFAULT "Use logfault" OFF)
+option(USE_LOGFAULT "Use logfault" OFF)
 
 if (NOT DEFINED _VERSION)
     set(YAHAT_VERSION 0.0.1)
@@ -52,8 +52,8 @@ add_library(${PROJECT_NAME}
     include/yahat/HttpServer.h
     )
 
-if (YAHAT_WITH_LOGFAULT)
-    message("Using logfault for logging")
+if (USE_LOGFAULT)
+   message("Using logfault for logging")
    add_dependencies(${PROJECT_NAME} logfault)
 else()
     message("Using default wrapper for logging")
