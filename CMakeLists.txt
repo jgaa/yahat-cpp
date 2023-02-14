@@ -85,7 +85,7 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/include/yahat" # source directory
         )
 
 # Tell CMake how to deal with the public API headers
-install(DIRECTORY "${${CMAKE_BINARY_DIR}/generated-include}/yahat" # source directory
+install(DIRECTORY "{${CMAKE_BINARY_DIR}/generated-include}/yahat" # source directory
         DESTINATION "include" # target directory
         )
 
