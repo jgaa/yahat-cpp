@@ -81,7 +81,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (vm.count("version")) {
-        std::cout << filesystem::path(argv[0]).stem().string() << ' '  << YAHAT_VERSION << endl;
+        std::cout << filesystem::path(argv[0]).stem().string() << ' '  << HttpServer::version() << endl;
         return -2;
     }
 
