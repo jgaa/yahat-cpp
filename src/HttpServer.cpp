@@ -517,6 +517,8 @@ Response HttpServer::onRequest(Request &req, const Auth& auth) noexcept
             LOG_TRACE << "Found route '" << best_route << "' for target '" << tw << "'";
             req.route = best_route;
             return best_handler->onReqest(req, auth);
+        } catch(const Response& resp) {
+            return resp;
         } catch (const exception& ex) {
             LOG_ERROR << "Caught unexpected exception "
                       << typeid(ex).name() << " from request: " << ex.what();

@@ -125,6 +125,19 @@ class RequestHandler {
 public:
     virtual ~RequestHandler() = default;
 
+    /*! Request handler
+     *
+     *  This method is called on the handler with the best mathing
+     *  route.
+     *
+     *  \param req Request to process
+     *  \param auth Authentication for the request.
+     *
+     *  \throws std::exception on error
+     *  \throws Response if an internal state triggered an exception
+     *          that provided a valid response. This may be an error,
+     *          or a shortcut to exit further processing in the handler.
+     */
     virtual Response onReqest(const Request& req, const Auth& auth) = 0;
 };
 
