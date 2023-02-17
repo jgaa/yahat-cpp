@@ -49,7 +49,7 @@ struct Request {
         DELETE
     };
 
-    boost::asio::yield_context& yield;
+    boost::asio::yield_context *yield = {};
     std::string target;
     std::string_view route; // The part of the target that was matched by the chosen route.
     std::string auth; // from Authorization header

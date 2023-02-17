@@ -149,7 +149,7 @@ void DoSession(streamT& streamPtr,
 
         // TODO: Check that the client accepts our json reply
         Request request {
-                yield,
+                &yield,
                 req.base().target(),
                 {},
                 "auth",
