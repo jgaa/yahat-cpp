@@ -203,7 +203,7 @@ class HttpServer
 public:
     using handler_t = std::shared_ptr<RequestHandler>;//std::function<Response (const Request& req)>;
 
-    HttpServer(const HttpConfig& config, authenticator_t authHandler);
+    HttpServer(const HttpConfig& config, authenticator_t authHandler, const std::string& branding = {});
 
     /*! Starts the server and returns immediately */
     std::future<void> start();
@@ -251,6 +251,10 @@ public:
         return authenticator_;
     }
 
+    std::string_view serverId() const noexcept {
+        return server_;
+    }
+
 private:
     void startWorkers();
 
@@ -260,6 +264,7 @@ private:
     boost::asio::io_context ctx_;
     std::vector<std::thread> workers_;
     std::promise<void> promise_;
+    const std::string server_;
 };
 
 } // ns

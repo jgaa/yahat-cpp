@@ -5,7 +5,7 @@ option(YAHAT_WITH_EXAMPLES "Compile examples" ON)
 option(USE_LOGFAULT "Use logfault" OFF)
 
 if (NOT DEFINED _VERSION)
-    set(YAHAT_VERSION 0.0.2)
+    set(YAHAT_VERSION 0.0.3)
 endif()
 add_definitions(-DYAHAT_VERSION=\"${YAHAT_VERSION}\")
 

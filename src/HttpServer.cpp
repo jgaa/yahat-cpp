@@ -106,7 +106,7 @@ auto to_type(const http::verb& verb) {
 }
 
 template <typename T>
-auto makeReply(T&res, const Response& r, bool closeConnection, LogRequest& lr) {
+auto makeReply(HttpServer& server, T&res, const Response& r, bool closeConnection, LogRequest& lr) {
 
     if (r.body.empty()) {
         // Use the http code and reason to compose a json reply
@@ -128,7 +128,7 @@ auto makeReply(T&res, const Response& r, bool closeConnection, LogRequest& lr) {
     }
     res.result(r.code);
     res.reason(r.reason);
-    res.base().set(http::field::server, "yahat "s + YAHAT_VERSION);
+    res.base().set(http::field::server, server.serverId());
     res.base().set(http::field::connection, closeConnection ? "close" : "keep-alive");
 
     if (auto mime = r.mimeType(); !mime.empty()) {
@@ -213,7 +213,7 @@ void DoSession(streamT& streamPtr,
 
             Response r{401, "Access Denied!"};
             http::response<http::string_body> res;            
-            makeReply(res, r, close, lr);
+            makeReply(instance, res, r, close, lr);
             http::async_write(stream, res, yield[ec]);
             if(ec) {
                 LOG_ERROR << "write failed: " << ec.message();
@@ -311,7 +311,7 @@ void DoSession(streamT& streamPtr,
 
         LOG_TRACE << "Preparing reply";
         http::response<http::string_body> res;
-        makeReply(res, reply, close, lr);
+        makeReply(instance, res, reply, close, lr);
         http::async_write(stream, res, yield[ec]);
         if(ec) {
             LOG_WARN << "write failed: " << ec.message();
@@ -338,10 +338,10 @@ void DoSession(streamT& streamPtr,
 } // ns
 
 
-HttpServer::HttpServer(const HttpConfig &config, authenticator_t authHandler)
+HttpServer::HttpServer(const HttpConfig &config, authenticator_t authHandler, const std::string& branding)
     : config_{config}, authenticator_(std::move(authHandler))
+    , server_{branding.empty() ? "yahat "s + YAHAT_VERSION : branding + "/yahat "s + YAHAT_VERSION}
 {
-
 }
 
 std::future<void> HttpServer::start()

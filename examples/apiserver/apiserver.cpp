@@ -136,7 +136,7 @@ int main(int argc, char* argv[]) {
             auth.access = true;
             auth.account = "nobody";
             return auth;
-        }};
+        }, "apiserver-example"};
 
 
         apiserver.addRoute("/api/v1", make_shared<MyRequestHandler>());
