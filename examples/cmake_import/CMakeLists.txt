@@ -19,6 +19,7 @@ find_package(Boost ${USE_BOOST_VERSION} REQUIRED COMPONENTS
     coroutine
     context
     chrono
+    json
     )
 
 # Allow us to depend on boost

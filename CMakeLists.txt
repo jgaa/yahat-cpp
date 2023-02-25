@@ -5,7 +5,7 @@ option(YAHAT_WITH_EXAMPLES "Compile examples" ON)
 option(USE_LOGFAULT "Use logfault" OFF)
 
 if (NOT DEFINED _VERSION)
-    set(YAHAT_VERSION 0.0.1)
+    set(YAHAT_VERSION 0.0.2)
 endif()
 add_definitions(-DYAHAT_VERSION=\"${YAHAT_VERSION}\")
 
@@ -29,8 +29,8 @@ find_package(Boost ${USE_BOOST_VERSION} REQUIRED COMPONENTS
     program_options
     coroutine
     context
-    regex
     chrono
+    json
     )
 
 add_library(boost INTERFACE IMPORTED)

@@ -64,7 +64,8 @@ private:
 
 public:
 
-    void set(const http::response<http::string_body>& res) {
+    template <typename T>
+    void set(const T& res) {
         replyValue = res.result_int();
         replyText = res.reason();
         flush();
@@ -102,6 +103,39 @@ auto to_type(const http::verb& verb) {
     default:
         throw runtime_error{"Unknown verb"};
     }
+}
+
+template <typename T>
+auto makeReply(T&res, const Response& r, bool closeConnection, LogRequest& lr) {
+
+    if (r.body.empty()) {
+        // Use the http code and reason to compose a json reply
+        res.body() = r.responseStatusAsJson();
+        auto mime = Response::getMimeType();
+        res.base().set(http::field::content_type, mime);
+    } else {
+        res.body() = r.body;
+        auto mime = r.mime_type;
+        if (mime.empty()) {
+            mime = r.mimeType(); // Try to get it from the context
+        }
+        if (mime.empty()) {
+            // Use json as default
+            // We are after all another REST API thing ;)
+            mime = Response::getMimeType();
+        }
+        res.base().set(http::field::content_type, mime);
+    }
+    res.result(r.code);
+    res.reason(r.reason);
+    res.base().set(http::field::server, "yahat "s + YAHAT_VERSION);
+    res.base().set(http::field::connection, closeConnection ? "close" : "keep-alive");
+
+    if (auto mime = r.mimeType(); !mime.empty()) {
+        res.base().set(http::field::content_type, {mime.data(), mime.size()});
+    }
+    res.prepare_payload();
+    lr.set(res);
 }
 
 template <bool isTls, typename streamT>
@@ -177,14 +211,9 @@ void DoSession(streamT& streamPtr,
         if (!auth.access) {
             LOG_TRACE << "Request was unauthorized!";
 
-            http::response<http::string_body> res;
-            res.body() = "Access denied";
-            res.result(401);
-            res.base().set(http::field::server, "yahat "s + YAHAT_VERSION);
-            res.base().set(http::field::connection, close ? "close" : "keep-alive");
-            res.prepare_payload();
-            lr.set(res);
-
+            Response r{401, "Access Denied!"};
+            http::response<http::string_body> res;            
+            makeReply(res, r, close, lr);
             http::async_write(stream, res, yield[ec]);
             if(ec) {
                 LOG_ERROR << "write failed: " << ec.message();
@@ -282,18 +311,7 @@ void DoSession(streamT& streamPtr,
 
         LOG_TRACE << "Preparing reply";
         http::response<http::string_body> res;
-        res.body() = reply.body;
-        res.result(reply.code);
-        res.reason(reply.reason);
-        res.base().set(http::field::server, "yahat "s + YAHAT_VERSION);
-
-        if (auto mime = reply.mimeType(); !mime.empty()) {
-            res.base().set(http::field::content_type, {mime.data(), mime.size()});
-        }
-        res.base().set(http::field::connection, close ? "close" : "keep-alive");
-        res.prepare_payload();
-
-        lr.set(res);
+        makeReply(res, reply, close, lr);
         http::async_write(stream, res, yield[ec]);
         if(ec) {
             LOG_WARN << "write failed: " << ec.message();
@@ -448,7 +466,7 @@ void HttpServer::run()
         LOG_DEBUG << "The HTTP server is done.";
     } BOOST_SCOPE_EXIT_END
 
-    auto future = start();
+            auto future = start();
     future.get();
 }
 
@@ -649,7 +667,7 @@ Response HttpServer::FileHandler::listDir(const std::filesystem::path &path)
     return {404, "Directoty listings are not supported"};
 }
 
-string_view Response::mimeType() const
+string_view Response::getMimeType(string_view type)
 {
     static const std::unordered_map<string_view, string_view> mime_types = {
         {"json", "application/json; charset=utf-8"},
@@ -682,6 +700,16 @@ string_view Response::mimeType() const
         {"jsonld", "application/ld+json"}
     };
 
+    if (auto mt = mime_types.find(type); mt != mime_types.end()) {
+        return mt->second;
+    }
+
+    return {};
+}
+
+
+string_view Response::mimeType() const
+{
     if (!mime_type.empty()) {
         return mime_type;
     }
@@ -689,10 +717,8 @@ string_view Response::mimeType() const
     if (!target.empty()) {
         if (const auto pos = target.find_last_of('.'); pos != string::npos) {
             if (target.size() > (pos + 1)) {
-                auto type = target.substr(pos + 1);
-                if (auto mt = mime_types.find(type); mt != mime_types.end()) {
-                    return mt->second;
-                }
+                const auto type = target.substr(pos + 1);
+                return getMimeType(type);
             }
         }
     }

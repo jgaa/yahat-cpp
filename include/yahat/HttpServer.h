@@ -9,6 +9,12 @@
 #include <boost/asio.hpp>
 #include <boost/asio/spawn.hpp>
 #include <boost/uuid/uuid.hpp>
+#include <boost/version.hpp>
+
+#if BOOST_VERSION >= 107500
+#   define USING_BOOST_JSON
+#   include <boost/json.hpp>
+#endif
 
 #include "yahat/config.h"
 
@@ -85,10 +91,23 @@ struct Response {
     std::string target; // The actual target
     std::string_view mime_type;
     std::string_view mimeType() const;
+    static std::string_view getMimeType(std::string_view type = "json");
     bool close = false;
 
     bool ok() const noexcept {
         return code / 100 == 2;
+    }
+
+    std::string responseStatusAsJson() const {
+#ifdef USING_BOOST_JSON
+        boost::json::object o;
+        o["error"] = code / 100 <= 2;
+        o["status"] = code;
+        o["reason"] = reason;
+        return boost::json::serialize(o);
+#else
+        return {};
+#endif
     }
 };
 
