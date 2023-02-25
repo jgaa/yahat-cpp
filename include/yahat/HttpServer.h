@@ -101,7 +101,7 @@ struct Response {
     std::string responseStatusAsJson() const {
 #ifdef USING_BOOST_JSON
         boost::json::object o;
-        o["error"] = code / 100 <= 2;
+        o["error"] = code / 100 > 2;
         o["status"] = code;
         o["reason"] = reason;
         return boost::json::serialize(o);
