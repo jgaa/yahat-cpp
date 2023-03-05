@@ -82,6 +82,10 @@ struct Request {
      *  Muteable because Requests in general are const
      */
     mutable std::function<void()> notify_connection_closed;
+
+    bool expectBody() const noexcept {
+        return type == Type::POST || type == Type::PUT || type == Type::PATCH;
+    }
 };
 
 struct Response {    
