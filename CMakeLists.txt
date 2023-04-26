@@ -3,6 +3,12 @@ cmake_minimum_required(VERSION 3.13)
 #option(YAHAT_WITH_TESTS "Compile tests" OFF)
 option(YAHAT_WITH_EXAMPLES "Compile examples" ON)
 option(USE_LOGFAULT "Use logfault" OFF)
+option(YAHAT_USE_VALGRIND "Enable Valgrind" OFF)
+
+if (YAHAT_USE_VALGRIND)
+   set (VALDGRIND_ARGS -DBOOST_USE_VALGRIND=1)
+endif()
+
 
 if (NOT DEFINED _VERSION)
     set(YAHAT_VERSION 0.0.3)
@@ -105,6 +111,7 @@ set_target_properties(${PROJECT_NAME}
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC -DBOOST_COROUTINES_NO_DEPRECATION_WARNING=1)
 target_compile_definitions(${PROJECT_NAME} PUBLIC -DBOOST_COROUTINE_NO_DEPRECATION_WARNING=1)
+target_compile_definitions(${PROJECT_NAME} PRIVATE ${VALDGRIND_ARGS})
 
 #if (YAHAT_WITH_TESTS)
 #    enable_testing()
