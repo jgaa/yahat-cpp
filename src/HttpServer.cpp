@@ -167,7 +167,7 @@ void DoSession(streamT& streamPtr,
 
         beast::get_lowest_layer(stream).expires_after(std::chrono::seconds(30));
         http::request<http::string_body> req;
-        http::async_read(stream, buffer, req, yield[ec]);
+        auto bytes = http::async_read(stream, buffer, req, yield[ec]);
         if(ec == http::error::end_of_stream) {
             LOG_TRACE << "Exiting loop end_of_stream";
             break;

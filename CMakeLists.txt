@@ -15,6 +15,10 @@ if (NOT DEFINED _VERSION)
 endif()
 add_definitions(-DYAHAT_VERSION=\"${YAHAT_VERSION}\")
 
+if (NOT DEFINED CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 17)
+endif()
+
 project(yahat VERSION ${YAHAT_VERSION} LANGUAGES CXX)
 set(YAHAT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/cmake)
@@ -79,7 +83,7 @@ target_include_directories(${PROJECT_NAME}
       $<INSTALL_INTERFACE:include>
 )
 
-set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
+#set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
 
 # Tell CMake how to install the binary library, and what to EXPORT
 install(TARGETS ${PROJECT_NAME}
@@ -102,7 +106,6 @@ install(DIRECTORY "${CMAKE_BINARY_DIR}/generated-include/yahat" # source directo
 
 set_target_properties(${PROJECT_NAME}
     PROPERTIES
-    CXX_STANDARD 17
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

@@ -1,6 +1,7 @@
 
 #include <iostream>
 #include <filesystem>
+#include <thread>
 #include <boost/program_options.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
