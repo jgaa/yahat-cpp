@@ -117,23 +117,21 @@ struct Response {
 
 /*! Data returned by the authenticator */
 struct Auth {
-    struct Extra {
-        virtual ~Extra() = default;
-    };
-
     std::string account;
     bool access = false;
 
     /// Optional data the application can set for it's own use
-    std::unique_ptr<Extra> extra;
+    std::any extra;
 };
 
 struct AuthReq {
 
-    AuthReq(const Request& req) : req{req} {}
+    AuthReq(const Request& req, boost::asio::yield_context& yield)
+        : req{req}, yield{yield} {}
 
     std::string_view auth_header;
     const Request& req;
+    boost::asio::yield_context& yield;
 };
 
 /*! Authenticator

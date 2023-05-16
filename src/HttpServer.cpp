@@ -199,7 +199,7 @@ void DoSession(streamT& streamPtr,
 
         Auth auth;
         if (const auto& ah = instance.authenticator()) {
-            AuthReq ar{request};
+            AuthReq ar{request, yield};
             if (auto it = req.base().find(http::field::authorization) ; it != req.base().end()) {
                 auto [a, u] = instance.Authenticate({it->value().data(), it->value().size()});
                 ar.auth_header = {it->value().data(), it->value().size()};
