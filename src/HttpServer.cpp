@@ -182,22 +182,13 @@ void DoSession(streamT& streamPtr,
         }
 
         // TODO: Check that the client accepts our json reply
-        Request request {
-                &yield,
-                req.base().target(),
-                {},
-                "auth",
-                {},
-                req.body(),
-                to_type(req.base().method())
-        };
+        Request request{req.base().target(), req.body(), to_type(req.base().method()), &yield};
 
         LogRequest lr{request};
         lr.remote =  beast::get_lowest_layer(stream).socket().remote_endpoint();
         lr.local = beast::get_lowest_layer(stream).socket().local_endpoint();
         lr.location = req.base().target();
 
-        Auth auth;
         if (const auto& ah = instance.authenticator()) {
             AuthReq ar{request, yield};
             if (auto it = req.base().find(http::field::authorization) ; it != req.base().end()) {
@@ -205,10 +196,10 @@ void DoSession(streamT& streamPtr,
                 ar.auth_header = {it->value().data(), it->value().size()};
             }
 
-            auth = ah(ar);
+            request.auth = ah(ar);
         }
 
-        if (!auth.access) {
+        if (!request.auth.access) {
             LOG_TRACE << "Request was unauthorized!";
 
             Response r{401, "Access Denied!"};
@@ -273,7 +264,7 @@ void DoSession(streamT& streamPtr,
 
                if (request.notify_connection_closed) {
                    LOG_TRACE << "Added notify_connection_closed while setting up SSE";
-                   eos_data->notify_connection_closed = move(request.notify_connection_closed);
+                   eos_data->notify_connection_closed = std::move(request.notify_connection_closed);
                }
 
                boost::asio::async_read(stream, rbb, [eos_data](boost::system::error_code ec, size_t) {
@@ -304,7 +295,7 @@ void DoSession(streamT& streamPtr,
             return eos_data && eos_data->ok;
         };
 
-        const auto reply = instance.onRequest(request, auth);
+        const auto reply = instance.onRequest(request);
         if (reply.close) {
             close = true;
         }
@@ -429,7 +420,7 @@ std::future<void> HttpServer::start()
                 errorCnt = 0;
 
                 if (is_tls) {
-                    boost::asio::spawn(acceptor.get_executor(), [this, sslCtx, socket=move(socket)](boost::asio::yield_context yield) mutable {
+                    boost::asio::spawn(acceptor.get_executor(), [this, sslCtx, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
                         auto stream = make_shared<beast::ssl_stream<beast::tcp_stream>>(std::move(socket), *sslCtx);
                         try {
                             DoSession<true>(stream, *this, yield);
@@ -439,8 +430,8 @@ std::future<void> HttpServer::start()
                     });
 
                 } else {
-                    boost::asio::spawn(acceptor.get_executor(), [this, socket=move(socket)](boost::asio::yield_context yield) mutable {
-                        auto stream = make_shared<beast::tcp_stream>(move(socket));
+                    boost::asio::spawn(acceptor.get_executor(), [this, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
+                        auto stream = make_shared<beast::tcp_stream>(std::move(socket));
                         try {
                             DoSession<false>(stream, *this, yield);
                         } catch(const exception& ex) {
@@ -490,7 +481,7 @@ void HttpServer::addRoute(std::string_view target, handler_t handler)
         throw runtime_error{"A target's route cannot be empty"};
     }
     string key{target};
-    routes_[move(key)] = handler;
+    routes_[std::move(key)] = handler;
 }
 
 std::pair<bool, string_view> HttpServer::Authenticate(const std::string_view &/*authHeader*/)
@@ -500,7 +491,7 @@ std::pair<bool, string_view> HttpServer::Authenticate(const std::string_view &/*
     return {true, teste};
 }
 
-Response HttpServer::onRequest(Request &req, const Auth& auth) noexcept
+Response HttpServer::onRequest(Request &req) noexcept
 {
     // Find the route!
     string_view tw{req.target.data(), req.target.size()};
@@ -534,7 +525,7 @@ Response HttpServer::onRequest(Request &req, const Auth& auth) noexcept
         try {
             LOG_TRACE << "Found route '" << best_route << "' for target '" << tw << "'";
             req.route = best_route;
-            return best_handler->onReqest(req, auth);
+            return best_handler->onReqest(req);
         } catch(const Response& resp) {
             return resp;
         } catch (const exception& ex) {
@@ -570,7 +561,7 @@ HttpServer::FileHandler::FileHandler(std::filesystem::path root)
     LOG_DEBUG << "Ready to serve path: " << root;
 }
 
-Response HttpServer::FileHandler::onReqest(const Request &req, const Auth& auth)
+Response HttpServer::FileHandler::onReqest(const Request &req)
 {
     static const Response not_found{404, "Document not found"};
     auto path = resolve(req.target);

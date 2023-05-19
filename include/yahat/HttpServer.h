@@ -46,6 +46,15 @@ struct HttpConfig {
 
 boost::uuids::uuid generateUuid();
 
+/*! Data returned by the authenticator */
+struct Auth {
+    std::string account;
+    bool access = false;
+
+    /// Optional data the application can set for it's own use
+    std::any extra;
+};
+
 struct Request {
     enum class Type {
         GET,
@@ -55,14 +64,22 @@ struct Request {
         DELETE
     };
 
-    boost::asio::yield_context *yield = {};
+    Request() = default;
+
+    Request(std::string target,
+            std::string body,
+            Type type,
+            boost::asio::yield_context *yield)
+        : target{std::move(target)}, body{std::move(body)}
+        , type{type}, yield{yield} {}
+
     std::string target;
     std::string_view route; // The part of the target that was matched by the chosen route.
-    std::string auth; // from Authorization header
-    std::string owner;
     std::string body;
     Type type = Type::GET;
     boost::uuids::uuid uuid = generateUuid();
+    Auth auth;
+    boost::asio::yield_context *yield = {};
 
     /*! Send one SSE event to the client.
      *
@@ -115,15 +132,6 @@ struct Response {
     }
 };
 
-/*! Data returned by the authenticator */
-struct Auth {
-    std::string account;
-    bool access = false;
-
-    /// Optional data the application can set for it's own use
-    std::any extra;
-};
-
 struct AuthReq {
 
     AuthReq(const Request& req, boost::asio::yield_context& yield)
@@ -159,7 +167,7 @@ public:
      *          that provided a valid response. This may be an error,
      *          or a shortcut to exit further processing in the handler.
      */
-    virtual Response onReqest(const Request& req, const Auth& auth) = 0;
+    virtual Response onReqest(const Request& req) = 0;
 };
 
 template <typename T>
@@ -168,7 +176,7 @@ public:
     EmbeddedHandler(const T& content, std::string prefix)
         : content_{content}, prefix_{std::move(prefix)} {}
 
-    Response onReqest(const Request& req, const Auth& auth) override {
+    Response onReqest(const Request& req) override {
         // Remove prefix
         auto t = std::string_view{req.target};
         if (t.size() < prefix_.size()) {
@@ -225,7 +233,7 @@ public:
     std::pair<bool, std::string_view /* user name */> Authenticate(const std::string_view& authHeader);
 
     // Called by the HTTP server implementation template
-    Response onRequest(Request& req, const Auth& auth) noexcept;
+    Response onRequest(Request& req) noexcept;
 
     // Serve a directory.
     // handles `index.html` by default. Lists the directory if there is no index.html.
@@ -233,7 +241,7 @@ public:
     public:
         FileHandler(std::filesystem::path root);
 
-        Response onReqest(const Request &req, const Auth& auth) override;
+        Response onReqest(const Request &req) override;
 
         std::filesystem::path resolve(std::string_view target);
     private:

@@ -21,11 +21,11 @@ po::positional_options_description positionalDescription;
 class MyRequestHandler : public RequestHandler {
     // RequestHandler interface
 public:
-    Response onReqest(const Request &req, const Auth &auth) override {
+    Response onReqest(const Request &req) override {
         LOG_DEBUG << "MyRequestHandler: Processing request "
         << req.uuid
         << " for account "
-        <<  auth.account;
+        <<  std::any_cast<string>(req.auth.extra);
 
         if (req.type != Request::Type::GET) {
             return {405, "Method Not Allowed - only GET is allowed here"};
@@ -135,7 +135,7 @@ int main(int argc, char* argv[]) {
             Auth auth;
             LOG_DEBUG << "Authenticating - auth header: " << ar.auth_header;
             auth.access = true;
-            auth.account = "nobody";
+            auth.extra = "nobody";
             return auth;
         }, "apiserver-example"};
 
