@@ -42,6 +42,17 @@ struct HttpConfig {
     std::string http_tls_key;
     /*! Path to the TLS cert-file if HTTPS is used */
     std::string http_tls_cert;
+
+    /*! Enables full support for HTTP Basic  Authentication.
+     *
+     *  See:https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication
+     *
+     *  Note that the application must still provide a auth functor that
+     *  performs the actual authentication
+     */
+    bool enable_http_basic_auth = true;
+
+    std::string http_basic_auth_realm;
 };
 
 boost::uuids::uuid generateUuid();
@@ -263,6 +274,10 @@ public:
 
     std::string_view serverId() const noexcept {
         return server_;
+    }
+
+    auto& config() const noexcept {
+        return config_;
     }
 
 private:

@@ -203,7 +203,15 @@ void DoSession(streamT& streamPtr,
             LOG_TRACE << "Request was unauthorized!";
 
             Response r{401, "Access Denied!"};
-            http::response<http::string_body> res;            
+            http::response<http::string_body> res;
+            res.base().set(http::field::server, instance.serverId());
+            if (instance.config().enable_http_basic_auth) {
+                if (auto realm = instance.config().http_basic_auth_realm; !realm.empty()) {
+                    res.base().set(http::field::www_authenticate, "Basic realm="s + realm);
+                } else {
+                    res.base().set(http::field::www_authenticate, "Basic");
+                }
+            }
             makeReply(instance, res, r, close, lr);
             http::async_write(stream, res, yield[ec]);
             if(ec) {
