@@ -82,29 +82,25 @@ struct Request {
 
     Request() = default;
 
-    Request(std::string target,
+    Request(std::string undecodedTtarget,
             std::string body,
             Type type,
             boost::asio::yield_context *yield)
-        : full_target{std::move(target)}, target{full_target}, body{std::move(body)}
+        : body{std::move(body)}
         , type{type}, yield{yield} {
-        init();
+        init(undecodedTtarget);
     }
 
-    void init();
+    void init(const std::string& undecodedTtarget);
 
-    std::string full_target;
-    std::string_view target;
-#ifdef USING_BOOST_URL
-    using url_type_t = decltype(boost::urls::parse_origin_form(""));
-    url_type_t url;
-#endif
+    std::string target;
     std::string_view route; // The part of the target that was matched by the chosen route.
     std::string body;
     Type type = Type::GET;
     boost::uuids::uuid uuid = generateUuid();
     Auth auth;
     boost::asio::yield_context *yield = {};
+    std::string all_arguments;
     std::map<std::string_view, std::string_view> arguments;
 
     /*! Send one SSE event to the client.

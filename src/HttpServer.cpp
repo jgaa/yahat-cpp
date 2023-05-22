@@ -335,15 +335,31 @@ void DoSession(streamT& streamPtr,
 
 } // ns
 
-void Request::init()
+void Request::init(const string& undecodedTtarget)
 {
 #ifdef USING_BOOST_URL
-    url = boost::urls::parse_origin_form(full_target);
-#endif
+    auto url = boost::urls::parse_origin_form(undecodedTtarget).value();
+    target = url.path();
+    all_arguments = url.query();
+    string_view aa = all_arguments;
+    for(auto pos = aa.find('&'); pos != string_view::npos; pos = aa.find('&')) {
+        auto current = aa.substr(0, pos);
+        aa = aa.substr(pos + 1);
+        if (auto eq = current.find('='); eq != string_view::npos) {
+            auto key = current.substr(0, eq);
+            auto val = current.substr(eq +1);
+            arguments[key] = val;
+        } else {
+            arguments[current] = {};
+        }
+    }
+#else
+    target = undecodedTtarget;
     if (auto pos = target.find('?'); pos != string::npos) {
         auto all_args = target.substr(pos + 1);
         target = target.substr(0, pos);
     }
+#endif
 }
 
 HttpServer::HttpServer(const HttpConfig &config, authenticator_t authHandler, const std::string& branding)
