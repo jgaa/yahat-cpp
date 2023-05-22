@@ -342,9 +342,16 @@ void Request::init(const string& undecodedTtarget)
     target = url.path();
     all_arguments = url.query();
     string_view aa = all_arguments;
-    for(auto pos = aa.find('&'); pos != string_view::npos; pos = aa.find('&')) {
-        auto current = aa.substr(0, pos);
-        aa = aa.substr(pos + 1);
+    for(auto pos = aa.find('&'); !aa.empty(); pos = aa.find('&')) {
+        string_view current;
+        if (pos == string_view::npos) {
+            current = aa;
+            aa = {};
+        } else {
+            current = aa.substr(0, pos);
+            aa = aa.substr(pos + 1);
+        }
+
         if (auto eq = current.find('='); eq != string_view::npos) {
             auto key = current.substr(0, eq);
             auto val = current.substr(eq +1);
