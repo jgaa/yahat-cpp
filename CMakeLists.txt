@@ -41,6 +41,7 @@ find_package(Boost ${USE_BOOST_VERSION} REQUIRED COMPONENTS
     context
     chrono
     json
+    url
     )
 
 add_library(boost INTERFACE IMPORTED)

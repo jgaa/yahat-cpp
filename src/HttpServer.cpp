@@ -14,7 +14,6 @@
 #include <boost/uuid/random_generator.hpp>
 #include <boost/scope_exit.hpp>
 
-
 #include "yahat/logging.h"
 #include "yahat/HttpServer.h"
 
@@ -336,6 +335,16 @@ void DoSession(streamT& streamPtr,
 
 } // ns
 
+void Request::init()
+{
+#ifdef USING_BOOST_URL
+    url = boost::urls::parse_origin_form(full_target);
+#endif
+    if (auto pos = target.find('?'); pos != string::npos) {
+        auto all_args = target.substr(pos + 1);
+        target = target.substr(0, pos);
+    }
+}
 
 HttpServer::HttpServer(const HttpConfig &config, authenticator_t authHandler, const std::string& branding)
     : config_{config}, authenticator_(std::move(authHandler))
@@ -465,7 +474,7 @@ void HttpServer::run()
         LOG_DEBUG << "The HTTP server is done.";
     } BOOST_SCOPE_EXIT_END
 
-            auto future = start();
+        auto future = start();
     future.get();
 }
 

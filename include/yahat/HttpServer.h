@@ -16,6 +16,11 @@
 #   include <boost/json.hpp>
 #endif
 
+#if BOOST_VERSION >= 107500
+#   define USING_BOOST_URL
+#   include <boost/url.hpp>
+#endif
+
 #include "yahat/config.h"
 
 namespace yahat {
@@ -81,16 +86,26 @@ struct Request {
             std::string body,
             Type type,
             boost::asio::yield_context *yield)
-        : target{std::move(target)}, body{std::move(body)}
-        , type{type}, yield{yield} {}
+        : full_target{std::move(target)}, target{full_target}, body{std::move(body)}
+        , type{type}, yield{yield} {
+        init();
+    }
 
-    std::string target;
+    void init();
+
+    std::string full_target;
+    std::string_view target;
+#ifdef USING_BOOST_URL
+    using url_type_t = decltype(boost::urls::parse_origin_form(""));
+    url_type_t url;
+#endif
     std::string_view route; // The part of the target that was matched by the chosen route.
     std::string body;
     Type type = Type::GET;
     boost::uuids::uuid uuid = generateUuid();
     Auth auth;
     boost::asio::yield_context *yield = {};
+    std::map<std::string_view, std::string_view> arguments;
 
     /*! Send one SSE event to the client.
      *
