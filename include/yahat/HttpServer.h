@@ -58,6 +58,9 @@ struct HttpConfig {
     bool enable_http_basic_auth = true;
 
     std::string http_basic_auth_realm;
+
+    /*! IO timeout in seconds for requests in/out */
+    unsigned http_io_timeout = 120;
 };
 
 boost::uuids::uuid generateUuid();

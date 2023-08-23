@@ -153,7 +153,7 @@ void DoSession(streamT& streamPtr,
     beast::flat_buffer buffer{1024 * 64};
 
     if constexpr(isTls) {
-        beast::get_lowest_layer(stream).expires_after(std::chrono::seconds(5));
+        beast::get_lowest_layer(stream).expires_after(chrono::seconds(5));
         stream.async_handshake(ssl::stream_base::server, yield[ec]);
         if(ec) {
             LOG_ERROR << "TLS handshake failed: " << ec.message();
@@ -164,7 +164,7 @@ void DoSession(streamT& streamPtr,
     while(!close) {
         LOG_TRACE << "Start of loop - close=" << close;
 
-        beast::get_lowest_layer(stream).expires_after(std::chrono::seconds(30));
+        beast::get_lowest_layer(stream).expires_after(chrono::seconds(instance.config().http_io_timeout));
         http::request<http::string_body> req;
         auto bytes = http::async_read(stream, buffer, req, yield[ec]);
         if(ec == http::error::end_of_stream) {
@@ -242,7 +242,7 @@ void DoSession(streamT& streamPtr,
 
         // Setup support for SSE
         request.sse_send = [&](string_view sse) {
-            beast::get_lowest_layer(stream).expires_after(30s);
+            beast::get_lowest_layer(stream).expires_after(std::chrono::seconds(instance.config().http_io_timeout));
             boost::system::error_code ec;
 
             if (!sse_initialized) {
@@ -320,7 +320,7 @@ void DoSession(streamT& streamPtr,
     }
 
     if constexpr(isTls) {
-        beast::get_lowest_layer(stream).expires_after(std::chrono::seconds(30));
+        beast::get_lowest_layer(stream).expires_after(chrono::seconds(instance.config().http_io_timeout));
 
         // Perform the SSL shutdown
         stream.async_shutdown(yield[ec]);
