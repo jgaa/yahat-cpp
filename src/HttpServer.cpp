@@ -53,7 +53,7 @@ struct LogRequest {
     boost::asio::ip::tcp::endpoint local, remote;
     Request::Type type;
     string location;
-    string user;
+    string_view user;
     int replyValue = 0;
     string replyText;
     boost::uuids::uuid uuid;
@@ -196,6 +196,7 @@ void DoSession(streamT& streamPtr,
             }
 
             request.auth = ah(ar);
+            lr.user = request.auth.account;
         }
 
         if (!request.auth.access) {
