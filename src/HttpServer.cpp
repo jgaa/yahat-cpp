@@ -107,25 +107,27 @@ auto to_type(const http::verb& verb) {
 }
 
 template <typename T>
-auto makeReply(HttpServer& server, T&res, const Response& r, bool closeConnection, LogRequest& lr) {
+auto makeReply(HttpServer& server, T&res, const Response& r, bool closeConnection, LogRequest& lr, Request::Type rt) {
 
-    if (r.body.empty()) {
-        // Use the http code and reason to compose a json reply
-        res.body() = r.responseStatusAsJson();
-        auto mime = Response::getMimeType();
-        res.base().set(http::field::content_type, mime);
-    } else {
-        res.body() = r.body;
-        auto mime = r.mime_type;
-        if (mime.empty()) {
-            mime = r.mimeType(); // Try to get it from the context
+    if (rt != Request::Type::OPTIONS) {
+        if (r.body.empty()) {
+            // Use the http code and reason to compose a json reply
+            res.body() = r.responseStatusAsJson();
+            auto mime = Response::getMimeType();
+            res.base().set(http::field::content_type, mime);
+        } else {
+            res.body() = r.body;
+            auto mime = r.mime_type;
+            if (mime.empty()) {
+                mime = r.mimeType(); // Try to get it from the context
+            }
+            if (mime.empty()) {
+                // Use json as default
+                // We are after all another REST API thing ;)
+                mime = Response::getMimeType();
+            }
+            res.base().set(http::field::content_type, mime);
         }
-        if (mime.empty()) {
-            // Use json as default
-            // We are after all another REST API thing ;)
-            mime = Response::getMimeType();
-        }
-        res.base().set(http::field::content_type, mime);
     }
     res.result(r.code);
     res.reason(r.reason);
@@ -210,7 +212,7 @@ void DoSession(streamT& streamPtr,
             r.corse = true;
             http::response<http::string_body> res;
             res.base().set(http::field::server, instance.serverId());
-            makeReply(instance, res, r, close, lr);
+            makeReply(instance, res, r, close, lr, request.type);
             http::async_write(stream, res, yield[ec]);
             if(ec) {
                 LOG_ERROR << "write failed: " << ec.message();
@@ -232,7 +234,7 @@ void DoSession(streamT& streamPtr,
                     res.base().set(http::field::www_authenticate, "Basic");
                 }
             }
-            makeReply(instance, res, r, close, lr);
+            makeReply(instance, res, r, close, lr, request.type);
             http::async_write(stream, res, yield[ec]);
             if(ec) {
                 LOG_ERROR << "write failed: " << ec.message();
@@ -330,7 +332,7 @@ void DoSession(streamT& streamPtr,
 
         LOG_TRACE << "Preparing reply";
         http::response<http::string_body> res;
-        makeReply(instance, res, reply, close, lr);
+        makeReply(instance, res, reply, close, lr, request.type);
         http::async_write(stream, res, yield[ec]);
         if(ec) {
             LOG_WARN << "write failed: " << ec.message();
