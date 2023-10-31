@@ -11,7 +11,7 @@ endif()
 
 
 if (NOT DEFINED _VERSION)
-    set(YAHAT_VERSION 0.0.3)
+    set(YAHAT_VERSION 0.0.4)
 endif()
 add_definitions(-DYAHAT_VERSION=\"${YAHAT_VERSION}\")
 
