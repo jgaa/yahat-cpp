@@ -70,7 +70,7 @@ struct HttpConfig {
      *   -  Access-Control-Allow-Origin: *
      *   -  Access-Control-Allow-Credentials: true
      *   -  Access-Control-Allow-Methods: GET,OPTIONS,POST,PUT,PATCH,DELETE
-     *   -  Access-Control-Allow-Headers: Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers
+     *   -  Access-Control-Allow-Headers: *
      */
     bool auto_handle_cors = true;
 };
