@@ -137,7 +137,7 @@ auto makeReply(HttpServer& server, T&res, const Response& r, bool closeConnectio
         res.base().set(http::field::access_control_allow_origin, "*");
         res.base().set(http::field::access_control_allow_credentials, "true");
         res.base().set(http::field::access_control_allow_methods, "GET,OPTIONS,POST,PUT,PATCH,DELETE");
-        res.base().set(http::field::access_control_allow_headers, "*"); //"Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers");
+        res.base().set(http::field::access_control_allow_headers, "Authorization, Content-Encoding, Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers");
     }
 
     if (auto mime = r.mimeType(); !mime.empty()) {
