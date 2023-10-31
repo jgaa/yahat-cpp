@@ -204,6 +204,21 @@ void DoSession(streamT& streamPtr,
             lr.user = request.auth.account;
         }
 
+        if (request.type == Request::Type::OPTIONS && instance.config() .auto_handle_cors) {
+            LOG_TRACE << "This is an OPTIONS request. Just returning a dummy CORS reply";
+            Response r{200, "OK"};
+            r.corse = true;
+            http::response<http::string_body> res;
+            res.base().set(http::field::server, instance.serverId());
+            makeReply(instance, res, r, close, lr);
+            http::async_write(stream, res, yield[ec]);
+            if(ec) {
+                LOG_ERROR << "write failed: " << ec.message();
+            }
+
+            continue;
+        }
+
         if (!request.auth.access) {
             LOG_TRACE << "Request was unauthorized!";
 
@@ -568,12 +583,6 @@ Response HttpServer::onRequest(Request &req) noexcept
     }
 
     if (best_handler) {
-        if (req.type == Request::Type::OPTIONS && config_.auto_handle_cors) {
-            LOG_TRACE << "This is an OPTIONS request. Just returning a dummy CORS reply";
-            Response r{200, "OK"};
-            r.corse = true;
-            return r;
-        }
         try {
             LOG_TRACE << "Found route '" << best_route << "' for target '" << tw << "'";
             req.route = best_route;
