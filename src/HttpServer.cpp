@@ -237,6 +237,7 @@ void DoSession(streamT& streamPtr,
                     res.base().set(http::field::www_authenticate, "Basic");
                 }
             }
+            r.cors = instance.config().auto_handle_cors;
             makeReply(instance, res, r, close, lr, request.type);
             http::async_write(stream, res, yield[ec]);
             if(ec) {
@@ -332,6 +333,8 @@ void DoSession(streamT& streamPtr,
         if (reply.close) {
             close = true;
         }
+
+        reply.cors = instance.config().auto_handle_cors;
 
         LOG_TRACE << "Preparing reply";
         http::response<http::string_body> res;

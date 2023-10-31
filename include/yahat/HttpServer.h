@@ -152,7 +152,7 @@ struct Response {
     std::string_view mimeType() const;
     static std::string_view getMimeType(std::string_view type = "json");
     bool close = false;
-    bool cors = false;
+    mutable bool cors = false;
 
     bool ok() const noexcept {
         return code / 100 == 2;
