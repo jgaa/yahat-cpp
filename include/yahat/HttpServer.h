@@ -66,8 +66,11 @@ struct HttpConfig {
      *
      *  In an API server, the normal handling is usually
      *  to ignore it and just answer "yea, right, whatever you want..."
-     *  which is to send a HTTP 200 message and the header:
-     *   - Access-Control-Allow-Origin: *
+     *  which is to send a HTTP 200 message and the headers:
+     *   -  Access-Control-Allow-Origin: *
+     *   -  Access-Control-Allow-Credentials: true
+     *   -  Access-Control-Allow-Methods: GET,OPTIONS,POST,PUT,PATCH,DELETE
+     *   -  Access-Control-Allow-Headers: Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers
      */
     bool auto_handle_cors = true;
 };
@@ -149,7 +152,7 @@ struct Response {
     std::string_view mimeType() const;
     static std::string_view getMimeType(std::string_view type = "json");
     bool close = false;
-    bool corse = false;
+    bool cors = false;
 
     bool ok() const noexcept {
         return code / 100 == 2;

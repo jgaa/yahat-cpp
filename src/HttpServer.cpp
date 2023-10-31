@@ -133,8 +133,11 @@ auto makeReply(HttpServer& server, T&res, const Response& r, bool closeConnectio
     res.reason(r.reason);
     res.base().set(http::field::server, server.serverId());
     res.base().set(http::field::connection, closeConnection ? "close" : "keep-alive");
-    if (r.corse) {
+    if (r.cors) {
         res.base().set(http::field::access_control_allow_origin, "*");
+        res.base().set(http::field::access_control_allow_credentials, "true");
+        res.base().set(http::field::access_control_allow_methods, "GET,OPTIONS,POST,PUT,PATCH,DELETE");
+        res.base().set(http::field::access_control_allow_headers, "Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers");
     }
 
     if (auto mime = r.mimeType(); !mime.empty()) {
@@ -209,7 +212,7 @@ void DoSession(streamT& streamPtr,
         if (request.type == Request::Type::OPTIONS && instance.config() .auto_handle_cors) {
             LOG_TRACE << "This is an OPTIONS request. Just returning a dummy CORS reply";
             Response r{200, "OK"};
-            r.corse = true;
+            r.cors = true;
             http::response<http::string_body> res;
             res.base().set(http::field::server, instance.serverId());
             makeReply(instance, res, r, close, lr, request.type);
