@@ -28,7 +28,7 @@ using namespace std::placeholders;
 using namespace std::string_literals;
 
 ostream& operator << (ostream& o, const yahat::Request::Type& t) {
-    static const array<string, 5> types = {"GET", "PUT", "PATCH", "POST", "DELETE"};
+    static const array<string, 6> types = {"GET", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"};
 
     return o << types.at(static_cast<size_t>(t));
 }
@@ -99,6 +99,8 @@ auto to_type(const http::verb& verb) {
         return Request::Type::PUT;
     case http::verb::delete_:
         return Request::Type::DELETE;
+    case http::verb::options:
+        return Request::Type::OPTIONS;
     default:
         throw runtime_error{"Unknown verb"};
     }
@@ -129,6 +131,9 @@ auto makeReply(HttpServer& server, T&res, const Response& r, bool closeConnectio
     res.reason(r.reason);
     res.base().set(http::field::server, server.serverId());
     res.base().set(http::field::connection, closeConnection ? "close" : "keep-alive");
+    if (r.corse) {
+        res.base().set(http::field::access_control_allow_origin, "*");
+    }
 
     if (auto mime = r.mimeType(); !mime.empty()) {
         res.base().set(http::field::content_type, {mime.data(), mime.size()});
@@ -563,6 +568,12 @@ Response HttpServer::onRequest(Request &req) noexcept
     }
 
     if (best_handler) {
+        if (req.type == Request::Type::OPTIONS && config_.auto_handle_cors) {
+            LOG_TRACE << "This is an OPTIONS request. Just returning a dummy CORS reply";
+            Response r{200, "OK"};
+            r.corse = true;
+            return r;
+        }
         try {
             LOG_TRACE << "Found route '" << best_route << "' for target '" << tw << "'";
             req.route = best_route;

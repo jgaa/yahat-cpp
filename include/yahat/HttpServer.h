@@ -61,6 +61,15 @@ struct HttpConfig {
 
     /*! IO timeout in seconds for requests in/out */
     unsigned http_io_timeout = 120;
+
+    /*! CORS is a resposne to Javascript madness.
+     *
+     *  In an API server, the normal handling is usually
+     *  to ignore it and just answer "yea, right, whatever you want..."
+     *  which is to send a HTTP 200 message and the header:
+     *   - Access-Control-Allow-Origin: *
+     */
+    bool auto_handle_cors = true;
 };
 
 boost::uuids::uuid generateUuid();
@@ -80,7 +89,8 @@ struct Request {
         PUT,
         PATCH,
         POST,
-        DELETE
+        DELETE,
+        OPTIONS
     };
 
     Request() = default;
@@ -139,6 +149,7 @@ struct Response {
     std::string_view mimeType() const;
     static std::string_view getMimeType(std::string_view type = "json");
     bool close = false;
+    bool corse = false;
 
     bool ok() const noexcept {
         return code / 100 == 2;
