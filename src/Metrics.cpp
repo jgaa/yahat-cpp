@@ -1,17 +1,64 @@
 
+#include <algorithm>
+#include <cmath>
 #include <array>
 #include <cassert>
+#include <iostream>
+#include <algorithm>
 
-#include "../include/yahat/Metrics.h"
+#include "yahat/Metrics.h"
 
 using namespace std;
 
 namespace yahat {
 
+std::optional<std::chrono::system_clock::time_point> Metrics::now_;
+
 Metrics::Metrics() {}
 
-Metrics::DataType::DataType(Type type, std::string name, std::string help, std::string unit, labels_t labels)
-    : name_{name}, help_{help}, unit_{unit}, labels_{std::move(labels)}, metricName_{makeMetricName()} {
+void Metrics::generate(std::ostream &target)
+{
+    target << std::fixed << std::setprecision(6);
+
+    std::vector<const DataType*> metrics;
+
+    {
+        // Make a copy of the metrics pointers so we don't keep the mutex locked for too long
+        // Metrics may be added, but once added they are never removed.
+        lock_guard lock{mutex_};
+        metrics.reserve(metrics_.size());
+        for (const auto& [name, data] : metrics_) {
+            metrics.push_back(data.get());
+        }
+    }
+
+    string_view current_family;
+
+    for (const auto* metric : metrics) {
+        assert(!metric->name().empty());
+
+        // Only print the meta-information for a metric once, even it there are lots of variations.
+        if (current_family != metric->name()) {
+            current_family = metric->name();
+
+            if (!metric->help().empty()) {
+                target << "# HELP " << metric->name() << " " << metric->help() << "\n";
+            }
+
+            assert(!metric->typeName().empty());
+            target << "# TYPE " << metric->name() << " " << metric->typeName() << "\n";
+
+            if (!metric->unit().empty()) {
+                target << "# UNIT " << metric->name() << " " << metric->unit() << "\n";
+            }
+        }
+
+        metric->render(target);
+    }
+}
+
+Metrics::DataType::DataType(std::string name, std::string help, std::string unit, labels_t labels)
+    : name_{name}, help_{help}, unit_{unit}, labels_{makeLabels(std::move(labels))}, metricName_{makeMetricName()} {
 };
 
 const std::string_view yahat::Metrics::DataType::typeName() const noexcept
@@ -23,23 +70,74 @@ const std::string_view yahat::Metrics::DataType::typeName() const noexcept
     return names[static_cast<int>(type())];
 }
 
+ostream &Metrics::DataType::renderCreated(std::ostream &target) const
+{
+    target << created_name_ << ' ';
+    renderNumber(target, std::chrono::duration<double>(created_.time_since_epoch()).count(), 3) << '\n';
+    return target;
+}
+
+string Metrics::DataType::makeKey(const std::string &name, const labels_t &labels)
+{
+    return makeNameWithSuffixAndLabels(name, {}, labels);
+}
+
 string Metrics::DataType::makeMetricName() const noexcept
 {
-    string result = name_;
-    if (labels_.empty()) {
+    return makeKey(name_, labels_);
+}
+
+string Metrics::DataType::makeNameWithSuffixAndLabels(const std::string name, const std::string &suffix, const labels_t &labels)
+{
+    string result = name;
+
+    if (!suffix.empty()) {
+        result += "_" + suffix;
+    }
+
+    if (labels.empty()) {
         return result;
     }
     result += "{"; // Start label list
 
     uint count = 0;
-    for (const auto& label : labels_) {
+    for (const auto& label : labels) {
         if (++count > 1) {
             result += ",";
         }
-        result += label.first + "=" + label.second;
+        result += label.first + "=\"" + label.second + "\"";
     }
     result += "}"; // End label list
     return result;
+}
+
+ostream& Metrics::DataType::renderNumber(std::ostream &target, double value, uint maxDecimals)
+{
+    if (std::floor(value) == value) {
+        // If it's an integer, print with at least 1 decimal
+        target << std::fixed << std::setprecision(1) << value;
+    } else {
+        // Count the number of significant decimal places
+        int precision = 1;
+        double fractionalPart = value - std::floor(value);
+        while (std::fabs(fractionalPart) > std::pow(10, -precision) && precision < 15) {
+            ++precision;
+        }
+
+        // Print the number with the calculated precision
+        target << std::fixed << std::setprecision(std::min<int>(precision, maxDecimals)) << value;
+    }
+
+    return target;
+}
+
+Metrics::labels_t Metrics::DataType::makeLabels(labels_t source)
+{
+    std::sort(source.begin(), source.end(), [](const auto& a, const auto& b) {
+        return a.first < b.first;
+    });
+
+    return source;
 }
 
 

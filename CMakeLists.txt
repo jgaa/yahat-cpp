@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
 
-#option(YAHAT_WITH_TESTS "Compile tests" OFF)
+option(YAHAT_WITH_TESTS "Compile tests" OFF)
 option(YAHAT_WITH_EXAMPLES "Compile examples" ON)
 option(USE_LOGFAULT "Use logfault" OFF)
 option(YAHAT_USE_VALGRIND "Enable Valgrind" OFF)
@@ -34,6 +34,13 @@ if(NOT DEFINED USE_BOOST_VERSION)
     set(USE_BOOST_VERSION 1.75)
 endif()
 
+if (YAHAT_WITH_TESTS)
+    find_package(GTest REQUIRED)
+endif()
+
+# https://cmake.org/cmake/help/latest/policy/CMP0167.html
+# Disable warning
+cmake_policy(SET CMP0167 OLD)
 find_package(Boost ${USE_BOOST_VERSION} REQUIRED MODULE COMPONENTS
     system
     program_options
@@ -73,11 +80,6 @@ endif()
 
 # We create a configuration file so that other code that include our header files gets the correct configuration.
 CONFIGURE_FILE(config.h.in ${CMAKE_BINARY_DIR}/generated-include/${PROJECT_NAME}/config.h)
-
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    message(STATUS "Using g++, adding -Winterference-size flag")
-    add_compile_options(-Winterference-size)
-endif()
 
 target_include_directories(${PROJECT_NAME}
     PUBLIC
@@ -122,10 +124,16 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC -DBOOST_COROUTINES_NO_DEPRECAT
 target_compile_definitions(${PROJECT_NAME} PUBLIC -DBOOST_COROUTINE_NO_DEPRECATION_WARNING=1)
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${VALDGRIND_ARGS})
 
-#if (YAHAT_WITH_TESTS)
-#    enable_testing()
-#    add_subdirectory(tests)
-#endif()
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    message(STATUS "Using g++, adding -Winterference-size flag")
+    target_compile_options(${PROJECT_NAME} PUBLIC -Wno-interference-size)
+endif()
+
+
+if (YAHAT_WITH_TESTS)
+   enable_testing()
+   add_subdirectory(tests)
+endif()
 
 if (YAHAT_WITH_EXAMPLES)
     add_subdirectory(examples)
