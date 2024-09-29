@@ -496,7 +496,7 @@ std::future<void> HttpServer::start()
                         } catch(const exception& ex) {
                             LOG_ERROR << "Caught exception from DoSession [HTTPS]: " << ex.what();
                         }
-                    });
+                    }, boost::asio::detached);
 
                 } else {
                     boost::asio::spawn(acceptor.get_executor(), [this, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
@@ -506,11 +506,11 @@ std::future<void> HttpServer::start()
                         } catch(const exception& ex) {
                             LOG_ERROR << "Caught exception from DoSession [HTTP]: " << ex.what();
                         }
-                    });
+                    }, boost::asio::detached);
                 }
             }
 
-        });
+        }, boost::asio::detached);
     }; // for resolver endpoint
 
 

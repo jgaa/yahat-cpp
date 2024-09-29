@@ -1,4 +1,5 @@
 #pragma once
 
 #cmakedefine USE_LOGFAULT
+#cmakedefine YAHAT_ENABLE_METRICS
 

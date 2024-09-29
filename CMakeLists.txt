@@ -4,11 +4,11 @@ cmake_minimum_required(VERSION 3.13)
 option(YAHAT_WITH_EXAMPLES "Compile examples" ON)
 option(USE_LOGFAULT "Use logfault" OFF)
 option(YAHAT_USE_VALGRIND "Enable Valgrind" OFF)
+option(YAHAT_ENABLE_METRICS "Enable Metrics (OpenMetrics compatible)" ON)
 
 if (YAHAT_USE_VALGRIND)
    set (VALDGRIND_ARGS -DBOOST_USE_VALGRIND=1)
 endif()
-
 
 if (NOT DEFINED _VERSION)
     set(YAHAT_VERSION 0.0.4)
@@ -34,7 +34,7 @@ if(NOT DEFINED USE_BOOST_VERSION)
     set(USE_BOOST_VERSION 1.75)
 endif()
 
-find_package(Boost ${USE_BOOST_VERSION} REQUIRED COMPONENTS
+find_package(Boost ${USE_BOOST_VERSION} REQUIRED MODULE COMPONENTS
     system
     program_options
     coroutine
@@ -61,6 +61,7 @@ add_library(${PROJECT_NAME}
     src/HttpServer.cpp
     src/logging.cpp
     include/yahat/HttpServer.h
+    include/yahat/Metrics.h src/Metrics.cpp
     )
 
 if (USE_LOGFAULT)
@@ -73,6 +74,10 @@ endif()
 # We create a configuration file so that other code that include our header files gets the correct configuration.
 CONFIGURE_FILE(config.h.in ${CMAKE_BINARY_DIR}/generated-include/${PROJECT_NAME}/config.h)
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    message(STATUS "Using g++, adding -Winterference-size flag")
+    add_compile_options(-Winterference-size)
+endif()
 
 target_include_directories(${PROJECT_NAME}
     PUBLIC
