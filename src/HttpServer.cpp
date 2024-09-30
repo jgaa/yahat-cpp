@@ -45,6 +45,24 @@ namespace yahat {
 
 namespace {
 
+template <typename T>
+struct ScopedExit {
+    explicit ScopedExit(T&& fn)
+        : fn_{std::move(fn)} {}
+
+    ScopedExit(const ScopedExit&) = delete;
+    ScopedExit(ScopedExit&&) = delete;
+
+    ~ScopedExit() {
+        fn_();
+    }
+
+    ScopedExit& operator =(const ScopedExit&) = delete;
+    ScopedExit& operator =(ScopedExit&&) = delete;
+private:
+    T fn_;
+};
+
 string generateUuid() {
     static boost::uuids::random_generator uuid_gen_;
     return boost::uuids::to_string(uuid_gen_());
@@ -160,15 +178,24 @@ void DoSession(streamT& streamPtr,
                HttpServer& instance,
                boost::asio::yield_context& yield)
 {
+#ifdef YAHAT_ENABLE_METRICS
+    auto * metrics = instance.internalMetrics();
+    if (metrics) {
+        metrics->currentSessions()->inc();
+    }
+
+    ScopedExit dec_session_gauge{[&] {
+        if (metrics) {
+            metrics->currentSessions()->dec();
+        }
+    }};
+#endif
+
     assert(streamPtr);
     auto& stream = *streamPtr;
 
     LOG_TRACE << "Processing session: " << beast::get_lowest_layer(stream).socket().remote_endpoint()
               << " --> " << beast::get_lowest_layer(stream).socket().local_endpoint();
-
-#ifdef YAHAT_ENABLE_METRICS
-    auto * metrics = instance.metrics();
-#endif
 
     bool close = false;
     beast::error_code ec;
@@ -204,7 +231,7 @@ void DoSession(streamT& streamPtr,
 
 #ifdef YAHAT_ENABLE_METRICS
         if (metrics) {
-            metrics->incomingrRequests()->inc();
+            metrics->incomingRequests()->inc();
         }
 #endif
 
@@ -420,6 +447,14 @@ HttpServer::HttpServer(const HttpConfig &config, authenticator_t authHandler, co
     : config_{config}, authenticator_(std::move(authHandler))
     , server_{branding.empty() ? "yahat "s + YAHAT_VERSION : branding + "/yahat "s + YAHAT_VERSION}
 {
+#ifdef YAHAT_ENABLE_METRICS
+    if (config.enable_metrics) {
+        metrics_ = make_shared<YahatInstanceMetrics>();
+
+        LOG_INFO << "Metrics enabled at '" << config.metrics_target <<'\'';
+        addRoute(config_.metrics_target, metrics_->metricsHandler(), "GET");
+    }
+#endif
 }
 
 std::future<void> HttpServer::start()
@@ -504,8 +539,8 @@ std::future<void> HttpServer::start()
                     continue;
                 }
 
-                if (metrics()) {
-                    metrics()->tcpConnections()->inc();
+                if (internalMetrics()) {
+                    internalMetrics()->tcpConnections()->inc();
                 }
 
                 errorCnt = 0;
@@ -548,7 +583,7 @@ void HttpServer::run()
         LOG_DEBUG << "The HTTP server is done.";
     } BOOST_SCOPE_EXIT_END
 
-        auto future = start();
+    auto future = start();
     future.get();
 }
 
@@ -566,11 +601,28 @@ void HttpServer::stop()
     promise_.set_value();
 }
 
+#ifdef YAHAT_ENABLE_METRICS
+Metrics *HttpServer::metrics() noexcept
+{
+    static Metrics *m{metrics_ ? &metrics_->metrics() : nullptr};
+    return m;
+}
+#endif
+
+#ifdef YAHAT_ENABLE_METRICS
+void HttpServer::addRoute_(std::string_view target, handler_t handler, const std::span<std::string_view> methods)
+#else
 void HttpServer::addRoute(std::string_view target, handler_t handler)
+#endif
 {
     if (target.size() == 0) {
         throw runtime_error{"A target's route cannot be empty"};
     }
+#ifdef YAHAT_ENABLE_METRICS
+    if (internalMetrics()) {
+        internalMetrics()->addHttpRequests(target, methods);
+    }
+#endif
     string key{target};
     routes_[std::move(key)] = handler;
 }
@@ -617,7 +669,7 @@ Response HttpServer::onRequest(Request &req) noexcept
             LOG_TRACE << "Found route '" << best_route << "' for target '" << tw << "'";
             req.route = best_route;
 #ifdef YAHAT_ENABLE_METRICS
-            auto * metrics = this->metrics();
+            auto * metrics = this->internalMetrics();
             if (metrics) {
                 metrics->incrementHttpRequestCount(best_route, toString(req.type));
             }
@@ -639,25 +691,26 @@ void HttpServer::startWorkers()
 {
     for(size_t i = 0; i < config_.num_http_threads; ++i) {
         workers_.emplace_back([this, i] {
-                LOG_DEBUG << "HTTP worker thread #" << i << " starting up.";
-                try {
 #ifdef YAHAT_ENABLE_METRICS
-                    if (metrics()) {
-                        metrics()->workerThreads()->inc();
-                    }
-#endif
-                    ctx_.run();
-                } catch(const exception& ex) {
-                    LOG_ERROR << "HTTP worker #" << i
-                              << " caught exception: "
-                              << ex.what();
+            if (internalMetrics()) {
+                internalMetrics()->workerThreads()->inc();
+            }
+
+            ScopedExit dec_worker_gauge{[&] {
+                if (internalMetrics()) {
+                    internalMetrics()->workerThreads()->dec();
                 }
-#ifdef YAHAT_ENABLE_METRICS
-                if (metrics()) {
-                    metrics()->workerThreads()->dec();
-                }
+            }};
 #endif
-                LOG_DEBUG << "HTTP worker thread #" << i << " done.";
+            LOG_DEBUG << "HTTP worker thread #" << i << " starting up.";
+            try {
+                ctx_.run();
+            } catch(const exception& ex) {
+                LOG_ERROR << "HTTP worker #" << i
+                          << " caught exception: "
+                          << ex.what();
+            }
+            LOG_DEBUG << "HTTP worker thread #" << i << " done.";
         });
     }
 }

@@ -12,6 +12,8 @@ using namespace std;
 using namespace std::chrono_literals;
 using namespace yahat;
 
+#ifdef YAHAT_ENABLE_METRICS
+
 static const auto test_time = chrono::system_clock::from_time_t(1727625364) + 124ms;
 
 TEST (Metrics, Counter) {
@@ -38,8 +40,7 @@ TEST (Metrics, Counter) {
 
         const auto expected = R"(# HELP http_requests Number of http-requests
 # TYPE http_requests counter
-http_requests_total{endpoint="/",method="GET"} 3
-http_requests_created{endpoint="/",method="GET"} 1727625364.124
+http_requests_total{endpoint="/",method="GET"} 3 1727625364.124
 )";
 
         EXPECT_EQ(target.str(), expected);
@@ -60,10 +61,8 @@ http_requests_created{endpoint="/",method="GET"} 1727625364.124
 
     const auto expected = R"(# HELP http_requests Number of http-requests
 # TYPE http_requests counter
-http_requests_total{endpoint="/",method="GET"} 3
-http_requests_created{endpoint="/",method="GET"} 1727625364.124
-http_requests_total{endpoint="/metrics",method="GET"} 1
-http_requests_created{endpoint="/metrics",method="GET"} 1727625364.124
+http_requests_total{endpoint="/",method="GET"} 3 1727625364.124
+http_requests_total{endpoint="/metrics",method="GET"} 1 1727625364.124
 )";
 
         std::ostringstream target;
@@ -78,14 +77,11 @@ http_requests_created{endpoint="/metrics",method="GET"} 1727625364.124
     {
         const auto expected = R"(# HELP UDP_requests Number of udp-requests
 # TYPE UDP_requests counter
-UDP_requests_total{endpoint="/foo",method="OPTIONS"} 5
-UDP_requests_created{endpoint="/foo",method="OPTIONS"} 1727625364.124
+UDP_requests_total{endpoint="/foo",method="OPTIONS"} 5 1727625364.124
 # HELP http_requests Number of http-requests
 # TYPE http_requests counter
-http_requests_total{endpoint="/",method="GET"} 3
-http_requests_created{endpoint="/",method="GET"} 1727625364.124
-http_requests_total{endpoint="/metrics",method="GET"} 1
-http_requests_created{endpoint="/metrics",method="GET"} 1727625364.124
+http_requests_total{endpoint="/",method="GET"} 3 1727625364.124
+http_requests_total{endpoint="/metrics",method="GET"} 1 1727625364.124
 )";
 
         std::ostringstream target;
@@ -161,8 +157,7 @@ TEST(Metrics, Gauge) {
         const auto expected = R"(# HELP queue_entries Number entries in the queue
 # TYPE queue_entries gauge
 # UNIT queue_entries count
-queue_entries{endpoint="/",method="GET"} 123
-queue_entries_created{endpoint="/",method="GET"} 1727625364.124
+queue_entries{endpoint="/",method="GET"} 123 1727625364.124
 )";
 
         EXPECT_EQ(target.str(), expected);
@@ -187,8 +182,7 @@ TEST(Metrics, Info) {
 
         const auto expected = R"(# HELP build Build information
 # TYPE build info
-build_info{version="1.0.0"} 1
-build_created{version="1.0.0"} 1727625364.124
+build_info{version="1.0.0"} 1 1727625364.124
 )";
         EXPECT_EQ(target.str(), expected);
     }
@@ -210,25 +204,21 @@ TEST(Metrics, InfoComesFirst) {
 
         const auto expected = R"(# HELP i1 Info 1
 # TYPE i1 info
-i1_info{a="1"} 1
-i1_created{a="1"} 1727625364.124
+i1_info{a="1"} 1 1727625364.124
 # HELP i2 Info 2
 # TYPE i2 info
-i2_info{a="2"} 1
-i2_created{a="2"} 1727625364.124
+i2_info{a="2"} 1 1727625364.124
 # HELP c1 Counter 1
 # TYPE c1 counter
-c1_total{a="1"} 0
-c1_created{a="1"} 1727625364.124
+c1_total{a="1"} 0 1727625364.124
 # HELP c2 Counter 2
 # TYPE c2 counter
-c2_total{a="2"} 0
-c2_created{a="2"} 1727625364.124
+c2_total{a="2"} 0 1727625364.124
 # HELP c3 Counter 3
 # TYPE c3 counter
-c3_total{a="3"} 0
-c3_created{a="3"} 1727625364.124
+c3_total{a="3"} 0 1727625364.124
 )";
+
         EXPECT_EQ(target.str(), expected);
     }
 }
@@ -250,17 +240,13 @@ TEST(Metrics, Clone) {
 
         const auto expected = R"(# HELP build Build information
 # TYPE build info
-build_info{version="1.0.0"} 1
-build_created{version="1.0.0"} 1727625364.124
-build_info{version="cloned-2.0.0"} 1
-build_created{version="cloned-2.0.0"} 1727625364.124
+build_info{version="1.0.0"} 1 1727625364.124
+build_info{version="cloned-2.0.0"} 1 1727625364.124
 # HELP queue_entries Number entries in the queue
 # TYPE queue_entries gauge
 # UNIT queue_entries count
-queue_entries{endpoint="/",method="GET"} 1
-queue_entries_created{endpoint="/",method="GET"} 1727625364.124
-queue_entries{endpoint="/cloned",method="POST"} 0
-queue_entries_created{endpoint="/cloned",method="POST"} 1727625364.124
+queue_entries{endpoint="/",method="GET"} 1 1727625364.124
+queue_entries{endpoint="/cloned",method="POST"} 0 1727625364.124
 )";
 
         EXPECT_EQ(target.str(), expected);
@@ -275,6 +261,8 @@ TEST(Metrics, CloneDuplicateLabels) {
 
     EXPECT_THROW(metrics.clone(*gauge, gauge->labels()), std::invalid_argument);
 }
+
+#endif // YAHAT_ENABLE_METRICS
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

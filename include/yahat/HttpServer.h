@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <string_view>
 #include <future>
+#include <span>
 
 #include <boost/asio.hpp>
 #include <boost/asio/spawn.hpp>
@@ -26,6 +27,7 @@
 namespace yahat {
 
 class YahatInstanceMetrics;
+class Metrics;
 
 struct HttpConfig {
     /*! Number of threads for the API and UI.
@@ -82,6 +84,8 @@ struct HttpConfig {
      *  Metrics are available at /metrics
      */
     bool enable_metrics = true;
+
+    std::string metrics_target = "/metrics";
 #endif
 };
 
@@ -275,7 +279,26 @@ public:
 
     void stop();
 
+#ifdef YAHAT_ENABLE_METRICS
+    /*! Get the metrics for this instance
+     *
+     *  You can use the metrics object to add your own metrics for your app.
+     *
+     *  @return The metrics object ot nullptr if metrics is disabled by configuration.
+     */
+    Metrics * metrics() noexcept;
+
+    template <typename... T>
+    void addRoute(std::string_view target, handler_t handler, T... methods)
+    {
+        std::array<std::string_view, sizeof...(T)> m = {methods...};
+        addRoute_(target, handler, m);
+    }
+
+    void addRoute_(std::string_view target, handler_t handler, const std::span<std::string_view> metricMethods = {});
+#else
     void addRoute(std::string_view target, handler_t handler);
+#endif
 
     static std::string_view version() noexcept;
 
@@ -318,20 +341,22 @@ public:
         return config_;
     }
 
-    auto * metrics() noexcept {
-        return metrics_;
+#ifdef YAHAT_ENABLE_METRICS
+    auto * internalMetrics() noexcept {
+        return metrics_.get();
     }
 
-    const auto * metrics() const noexcept {
-        return metrics_;
+    const auto * internalMetrics() const noexcept {
+        return metrics_.get();
     }
+#endif
 
 private:
     void startWorkers();
 
     const HttpConfig& config_;
 #ifdef YAHAT_ENABLE_METRICS
-    YahatInstanceMetrics *metrics_{};
+    std::shared_ptr<YahatInstanceMetrics> metrics_{};
 #endif
     const authenticator_t authenticator_;
     std::map<std::string, handler_t> routes_;

@@ -71,9 +71,11 @@ const std::string_view yahat::Metrics::DataType::typeName() const noexcept
     return names[static_cast<int>(type())];
 }
 
-ostream &Metrics::DataType::renderCreated(std::ostream &target) const
+ostream &Metrics::DataType::renderCreated(std::ostream &target, bool postfix) const
 {
-    target << created_name_ << ' ';
+    if (!postfix) {
+        target << created_name_ << ' ';
+    }
     renderNumber(target, std::chrono::duration<double>(created_.time_since_epoch()).count(), 3) << '\n';
     return target;
 }

@@ -44,12 +44,16 @@ private:
 
 YahatInstanceMetrics::YahatInstanceMetrics() {
 
-    incoming_requests_ = metrics_.AddCounter<uint64_t>("yahat_incoming_requests", "Number of incoming requests", "count");
-    tcp_connections_ = metrics_.AddCounter<uint64_t>("yahat_tcp_connections", "Number of TCP connections", "count");
-    current_sessions_ = metrics_.AddGauge<uint64_t>("yahat_current_sessions", "Number of current sessions", "count");
-    worker_threads_ = metrics_.AddGauge<uint64_t>("yahat_worker_threads", "Number of worker threads", "count");
+    incoming_requests_ = metrics_.AddCounter<uint64_t>("yahat_incoming_requests", "Number of incoming requests. Counted before validation", {});
+    tcp_connections_ = metrics_.AddCounter<uint64_t>("yahat_tcp_connections", "Number of TCP connections", {});
+    current_sessions_ = metrics_.AddGauge<uint64_t>("yahat_current_sessions", "Number of current sessions", {});
+    worker_threads_ = metrics_.AddGauge<uint64_t>("yahat_worker_threads", "Number of worker threads", {});
 
-    addHttpRequests("/", {});
+    metrics_.AddInfo("yahat_system", "Yahat information", {}, {
+        {"version", YAHAT_VERSION},
+        {"boost", BOOST_LIB_VERSION},
+        //{"compiler", BOOST_COMPILER}, // very noisy
+    });
 }
 
 yahat::HttpServer::handler_t YahatInstanceMetrics::metricsHandler()
@@ -58,21 +62,21 @@ yahat::HttpServer::handler_t YahatInstanceMetrics::metricsHandler()
     return make_shared<MetricsHandler>(*this);
 }
 
-void YahatInstanceMetrics::addHttpRequests(const std::string &route, std::span<std::string_view> methods)
+void YahatInstanceMetrics::addHttpRequests(std::string_view target, const std::span<std::string_view> methods)
 {
     static constexpr auto all_methods = to_array<string_view>({"GET", "PUT", "POST", "PATCH", "DELETE", "OPTIONS", "O"});
 
     auto add = [&](auto& range) {
         lock_guard lock{mutex_};
         for (const auto& method : range) {
-            const auto key = format("{}{}", method, route);
+            const auto key = format("{}{}", method, target);
             http_requests_[key] = metrics_.AddCounter<uint64_t>(
-                "yahat_incoming_requests", "Number of incoming requests",
-                "count", {{"route", route}, {"method", string{method}}});
+                "yahat_http_requests", "Number of incoming http requests",
+                "count", {{"route", string(target)}, {"method", string{method}}});
         }
     };
 
-    if (methods.empty()) {
+    if (!methods.empty()) {
         add(methods);
         return;
     }

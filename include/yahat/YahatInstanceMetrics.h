@@ -27,7 +27,7 @@ public:
 
     Metrics& metrics() { return metrics_; }
 
-    counter_t * incomingrRequests() { return incoming_requests_; }
+    counter_t * incomingRequests() { return incoming_requests_; }
     counter_t * tcpConnections() { return tcp_connections_; }
     gauge_t * currentSessions() { return current_sessions_; }
     counter_t * httpRequests(const std::string& route);
@@ -35,7 +35,7 @@ public:
 
     HttpServer::handler_t metricsHandler();
 
-    void addHttpRequests(const std::string& route, std::span<std::string_view> methods);
+    void addHttpRequests(std::string_view target, const std::span<std::string_view> methods);
 
     void incrementHttpRequestCount(const std::string_view route, std::string_view method);
 

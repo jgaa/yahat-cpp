@@ -61,7 +61,7 @@ public:
         const labels_t& labels() const noexcept { return labels_; }
 
         virtual std::ostream& render(std::ostream& target) const = 0;
-        std::ostream& renderCreated(std::ostream& target) const;
+        std::ostream& renderCreated(std::ostream& target, bool postfix = false) const;
 
         static std::string makeKey(const std::string& name, const labels_t& labels, std::optional<DataType::Type> type = {});
         static labels_t makeLabels(labels_t source);
@@ -104,8 +104,8 @@ public:
 
         std::ostream& render(std::ostream& target) const override {
             target << total_name_ << ' ';
-            renderNumber(target, value()) << '\n';
-            return renderCreated(target);
+            renderNumber(target, value()) << ' '; //<< '\n';
+            return renderCreated(target, true);
         }
 
     private:
@@ -138,8 +138,8 @@ public:
 
         std::ostream& render(std::ostream& target) const override {
             target << metricName() << ' ';
-            renderNumber(target, value()) << '\n';
-            return renderCreated(target);
+            renderNumber(target, value()) << ' ';
+            return renderCreated(target, true);
         }
 
     private:
@@ -152,8 +152,8 @@ public:
             : DataType(DataType::Type::Info, std::move(name), std::move(help), std::move(unit), std::move(labels)) {}
 
         std::ostream& render(std::ostream& target) const override {
-            target << info_name_ << " 1\n";
-            return renderCreated(target);
+            target << info_name_ << " 1 ";
+            return renderCreated(target, true);
         }
 
     private:
