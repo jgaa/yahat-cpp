@@ -41,7 +41,7 @@ public:
             Untyped
         };
 
-        DataType(std::string name, std::string help, std::string unit, labels_t labels = {});
+        DataType(Type type, std::string name, std::string help, std::string unit, labels_t labels);
 
         DataType() = delete;
         DataType(const DataType&) = delete;
@@ -51,7 +51,7 @@ public:
 
         virtual ~DataType() = default;
 
-        virtual Type type() const noexcept = 0;
+        Type type() const noexcept { return type_; }
         const std::string_view typeName() const noexcept;
         const std::string& name() const noexcept { return name_; }
         const std::string& help() const noexcept { return help_; }
@@ -63,9 +63,10 @@ public:
         virtual std::ostream& render(std::ostream& target) const = 0;
         std::ostream& renderCreated(std::ostream& target) const;
 
-        static std::string makeKey(const std::string& name, const labels_t& labels);
+        static std::string makeKey(const std::string& name, const labels_t& labels, std::optional<DataType::Type> type = {});
         static labels_t makeLabels(labels_t source);
-        static std::string makeNameWithSuffixAndLabels(const std::string name, const std::string& suffix, const labels_t& labels);
+        static std::string makeNameWithSuffixAndLabels(const std::string name, const std::string& suffix,
+                                                       const labels_t& labels, bool first = false);
         static std::ostream& renderNumber(std::ostream& target, double value, uint maxDecimals = 6);
         static std::ostream& renderNumber(std::ostream& target, uint64_t value, uint maxDecimals = 0) {
             return target << value;
@@ -76,6 +77,7 @@ public:
         std::string makeMetricName() const noexcept;
         std::string labelString() const;
 
+        const Type type_;
         const std::string name_;
         const std::string help_;
         const std::string unit_;
@@ -89,9 +91,7 @@ public:
     class Counter : public DataType {
     public:
         Counter(std::string name, std::string help, std::string unit, labels_t labels = {})
-            : DataType(name, help, unit, std::move(labels)) {}
-
-        Type type() const noexcept override { return Type::Counter; }
+            : DataType(DataType::Type::Counter, std::move(name), std::move(help), std::move(unit), std::move(labels)) {}
 
         void inc(T value=1) noexcept {
             assert(value >= 0);
@@ -111,17 +111,70 @@ public:
     private:
         std::atomic<T> value_{T{}};
         std::string total_name_ = makeNameWithSuffixAndLabels(name(), "total", labels());
-    };
+    }; // Counter
+
+    template <typename T = uint64_t>
+    class Gauge : public DataType {
+    public:
+        Gauge(std::string name, std::string help, std::string unit, labels_t labels = {})
+            : DataType(DataType::Type::Gauge, std::move(name), std::move(help), std::move(unit), std::move(labels)) {}
+
+        void set(T value) noexcept {
+            value_.store(value, std::memory_order_relaxed);
+        }
+
+        T value() const noexcept {
+            return value_.load(std::memory_order_relaxed);
+        }
+
+        std::ostream& render(std::ostream& target) const override {
+            target << metricName() << ' ';
+            renderNumber(target, value()) << '\n';
+            return renderCreated(target);
+        }
+
+    private:
+        std::atomic<T> value_{T{}};
+    }; // Gauge
+
+    class Info : public DataType {
+    public:
+        Info(std::string name, std::string help, std::string unit, labels_t labels = {})
+            : DataType(DataType::Type::Info, std::move(name), std::move(help), std::move(unit), std::move(labels)) {}
+
+        std::ostream& render(std::ostream& target) const override {
+            target << info_name_ << " 1\n";
+            return renderCreated(target);
+        }
+
+    private:
+        std::string info_name_ = makeNameWithSuffixAndLabels(name(), "info", labels());
+    }; // Gauge
 
     Metrics();
     ~Metrics() = default;
 
     template<typename T = uint64_t>
     Counter<T> *AddCounter(std::string name, std::string help, std::string unit = {}, labels_t labels = {}) {
-        auto c = std::make_unique<Counter<T>>(name, help, unit, std::move(labels));
+        return AddMetric<Counter<T>>(std::move(name), std::move(help), std::move(unit), std::move(labels));
+    }
+
+    template<typename T = uint64_t>
+    Gauge<T> *AddGauge(std::string name, std::string help, std::string unit = {}, labels_t labels = {}) {
+        return AddMetric<Gauge<T>>(std::move(name), std::move(help), std::move(unit), std::move(labels));
+    }
+
+    template<typename T = uint64_t>
+    Info *AddInfo(std::string name, std::string help, std::string unit = {}, labels_t labels = {}) {
+        return AddMetric<Info>(std::move(name), std::move(help), std::move(unit), std::move(labels));
+    }
+
+    template<typename T>
+    T *AddMetric(std::string name, std::string help, std::string unit = {}, labels_t labels = {}) {
+        auto c = std::make_unique<T>(std::move(name), std::move(help), std::move(unit), std::move(labels));
         auto * ptr = c.get();
         std::lock_guard lock(mutex_);
-        auto key = c->metricName();
+        auto key = DataType::makeKey(c->name(), c->labels(), c->type());
         metrics_.emplace(key, std::move(c));
         return ptr;
     }
@@ -148,15 +201,20 @@ public:
         return ptr;
     }
 
-    DataType * lookup(const std::string& name, labels_t labels = {}) {
+    DataType * lookup(const std::string& name, labels_t labels = {}, std::optional<DataType::Type> type = {}) {
         const auto my_labels = DataType::makeLabels(labels);
-        const auto key = DataType::makeKey(name, my_labels);
+        const auto key = DataType::makeKey(name, my_labels, type);
 
         std::lock_guard lock(mutex_);
         auto it = metrics_.find(key);
         if (it == metrics_.end()) {
             return nullptr;
         }
+
+        if (type && type.value() != it->second->type()) {
+            return nullptr;
+        }
+
         return it->second.get();
     }
 

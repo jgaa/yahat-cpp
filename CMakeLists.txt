@@ -11,12 +11,12 @@ if (YAHAT_USE_VALGRIND)
 endif()
 
 if (NOT DEFINED _VERSION)
-    set(YAHAT_VERSION 0.0.4)
+    set(YAHAT_VERSION 0.1.0)
 endif()
 add_definitions(-DYAHAT_VERSION=\"${YAHAT_VERSION}\")
 
 if (NOT DEFINED CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD 20)
 endif()
 
 project(yahat VERSION ${YAHAT_VERSION} LANGUAGES CXX)
@@ -31,7 +31,7 @@ endif()
 include(GNUInstallDirs)
 
 if(NOT DEFINED USE_BOOST_VERSION)
-    set(USE_BOOST_VERSION 1.75)
+    set(USE_BOOST_VERSION 1.81)
 endif()
 
 if (YAHAT_WITH_TESTS)
@@ -70,6 +70,15 @@ add_library(${PROJECT_NAME}
     include/yahat/HttpServer.h
     include/yahat/Metrics.h src/Metrics.cpp
     )
+
+target_link_libraries(${PROJECT_NAME}
+    PUBLIC
+        ${Boost_LIBRARIES}
+        ${OPENSSL_LIBRARIES}
+        ${ZLIB_LIBRARIES}
+        ${CMAKE_THREAD_LIBS_INIT}
+)
+
 
 if (USE_LOGFAULT)
    message("Using logfault for logging")

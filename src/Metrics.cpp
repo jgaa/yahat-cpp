@@ -9,6 +9,7 @@
 #include "yahat/Metrics.h"
 
 using namespace std;
+using namespace ::std::string_literals;
 
 namespace yahat {
 
@@ -57,8 +58,8 @@ void Metrics::generate(std::ostream &target)
     }
 }
 
-Metrics::DataType::DataType(std::string name, std::string help, std::string unit, labels_t labels)
-    : name_{name}, help_{help}, unit_{unit}, labels_{makeLabels(std::move(labels))}, metricName_{makeMetricName()} {
+Metrics::DataType::DataType(Type type, std::string name, std::string help, std::string unit, labels_t labels)
+    : type_{type}, name_{name}, help_{help}, unit_{unit}, labels_{makeLabels(std::move(labels))}, metricName_{makeMetricName()} {
 };
 
 const std::string_view yahat::Metrics::DataType::typeName() const noexcept
@@ -77,19 +78,21 @@ ostream &Metrics::DataType::renderCreated(std::ostream &target) const
     return target;
 }
 
-string Metrics::DataType::makeKey(const std::string &name, const labels_t &labels)
+string Metrics::DataType::makeKey(const std::string &name, const labels_t &labels, std::optional<DataType::Type> type)
 {
-    return makeNameWithSuffixAndLabels(name, {}, labels);
+    return makeNameWithSuffixAndLabels(name, {}, labels, type && type.value() == Type::Info);
 }
 
 string Metrics::DataType::makeMetricName() const noexcept
 {
-    return makeKey(name_, labels_);
+    return makeNameWithSuffixAndLabels(name_, {}, labels_, false);
 }
 
-string Metrics::DataType::makeNameWithSuffixAndLabels(const std::string name, const std::string &suffix, const labels_t &labels)
+string Metrics::DataType::makeNameWithSuffixAndLabels(const std::string name, const std::string &suffix,
+                                                      const labels_t &labels, bool first)
 {
-    string result = name;
+    // Info nodes are supposed to come first in the output
+    string result = first ? ("#"s + name) : name;
 
     if (!suffix.empty()) {
         result += "_" + suffix;
@@ -111,6 +114,7 @@ string Metrics::DataType::makeNameWithSuffixAndLabels(const std::string name, co
     return result;
 }
 
+// TODO: Optimize/replace this AI generated code
 ostream& Metrics::DataType::renderNumber(std::ostream &target, double value, uint maxDecimals)
 {
     if (std::floor(value) == value) {
@@ -121,11 +125,14 @@ ostream& Metrics::DataType::renderNumber(std::ostream &target, double value, uin
         int precision = 1;
         double fractionalPart = value - std::floor(value);
         while (std::fabs(fractionalPart) > std::pow(10, -precision) && precision < 15) {
+            if (precision >= maxDecimals) {
+                break;
+            }
             ++precision;
         }
 
         // Print the number with the calculated precision
-        target << std::fixed << std::setprecision(std::min<int>(precision, maxDecimals)) << value;
+        target << std::fixed << std::setprecision(precision) << value;
     }
 
     return target;

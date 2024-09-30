@@ -5,11 +5,10 @@ add_executable(${PROJECT_NAME} apiserver.cpp)
 
 target_link_libraries(${PROJECT_NAME}
     yahat
-    ${Boost_LIBRARIES}
-    ${OPENSSL_LIBRARIES}
-    ${ZLIB_LIBRARIES}
-    stdc++fs
-    ${CMAKE_THREAD_LIBS_INIT}
+    # ${Boost_LIBRARIES}
+    # ${OPENSSL_LIBRARIES}
+    # ${ZLIB_LIBRARIES}
+    # ${CMAKE_THREAD_LIBS_INIT}
 )
 
 set_target_properties(${PROJECT_NAME}
