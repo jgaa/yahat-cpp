@@ -192,8 +192,9 @@ public:
     T * clone(T& source, labels_t labels) {
         auto c = std::make_unique<T>(source.name(), source.help(), source.unit(), std::move(labels));
         auto * ptr = c.get();
+        const auto key = DataType::makeKey(c->name(), c->labels(), c->type());
+
         std::lock_guard lock(mutex_);
-        auto key = c->metricName();
         auto [it, added] = metrics_.emplace(key, std::move(c));
         if (!added) {
             throw std::invalid_argument("Metric already exists with the same labels");
