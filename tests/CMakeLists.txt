@@ -2,6 +2,7 @@ project(unittests LANGUAGES CXX)
 
 
 ####### metrics_tests
+if (YAHAT_ENABLE_METRICS)
 
 add_executable(metrics_tests
     metrics_tests.cpp
@@ -29,3 +30,4 @@ target_link_libraries(metrics_tests
 
 add_test(NAME metrics_tests COMMAND metrics_tests)
 
+endif()

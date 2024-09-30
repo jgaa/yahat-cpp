@@ -538,10 +538,11 @@ std::future<void> HttpServer::start()
                     ++errorCnt;
                     continue;
                 }
-
+#ifdef YAHAT_ENABLE_METRICS
                 if (internalMetrics()) {
                     internalMetrics()->tcpConnections()->inc();
                 }
+#endif
 
                 errorCnt = 0;
 

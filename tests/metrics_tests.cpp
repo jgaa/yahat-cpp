@@ -262,6 +262,10 @@ TEST(Metrics, CloneDuplicateLabels) {
     EXPECT_THROW(metrics.clone(*gauge, gauge->labels()), std::invalid_argument);
 }
 
+#else
+TEST(Metrics, Placeholder) {
+    EXPECT_TRUE(true);
+}
 #endif // YAHAT_ENABLE_METRICS
 
 int main(int argc, char **argv) {

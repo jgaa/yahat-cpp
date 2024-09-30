@@ -5,6 +5,9 @@
 #include <array>
 
 #include "yahat/config.h"
+
+#ifdef YAHAT_ENABLE_METRICS
+
 #include "yahat/HttpServer.h"
 #include "yahat/Metrics.h"
 
@@ -52,3 +55,5 @@ private:
 };
 
 }
+
+#endif // YAHAT_ENABLE_METRICS

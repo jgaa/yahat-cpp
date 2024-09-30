@@ -11,6 +11,8 @@
 using namespace std;
 using namespace ::std::string_literals;
 
+#ifdef YAHAT_ENABLE_METRICS
+
 namespace yahat {
 
 std::optional<std::chrono::system_clock::time_point> Metrics::now_;
@@ -151,3 +153,5 @@ Metrics::labels_t Metrics::DataType::makeLabels(labels_t source)
 
 
 } // ns
+
+#endif // YAHAT_ENABLE_METRICS
