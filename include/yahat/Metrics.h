@@ -123,6 +123,15 @@ public:
             value_.store(value, std::memory_order_relaxed);
         }
 
+        void inc(T value=1) noexcept {
+            value_.fetch_add(value, std::memory_order_relaxed);
+        }
+
+        void dec(T value=1) noexcept {
+            assert((value_.load() - value) >= 0);
+            value_.fetch_sub(value, std::memory_order_relaxed);
+        }
+
         T value() const noexcept {
             return value_.load(std::memory_order_relaxed);
         }
@@ -235,6 +244,10 @@ public:
 
     void setNow(std::chrono::system_clock::time_point now) {
         now_ = now;
+    }
+
+    std::string_view contentType() const noexcept {
+        return "application/openmetrics-text; version=1.0.0; charset=utf-8";
     }
 
 private:

@@ -16,6 +16,7 @@
 
 #include "yahat/logging.h"
 #include "yahat/HttpServer.h"
+#include "yahat/YahatInstanceMetrics.h"
 
 using namespace std;
 using namespace std;
@@ -27,10 +28,17 @@ namespace net = boost::asio;            // from <boost/asio.hpp>
 using namespace std::placeholders;
 using namespace std::string_literals;
 
-ostream& operator << (ostream& o, const yahat::Request::Type& t) {
-    static const array<string, 6> types = {"GET", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"};
 
-    return o << types.at(static_cast<size_t>(t));
+namespace   {
+string_view toString(yahat::Request::Type type) {
+    static constexpr auto types = to_array({"GET", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"});
+    return types.at(static_cast<size_t>(type));
+}
+
+} // anon ns
+
+ostream& operator << (ostream& o, const yahat::Request::Type& t) {
+    return o << toString(t);
 }
 
 namespace yahat {
@@ -158,6 +166,10 @@ void DoSession(streamT& streamPtr,
     LOG_TRACE << "Processing session: " << beast::get_lowest_layer(stream).socket().remote_endpoint()
               << " --> " << beast::get_lowest_layer(stream).socket().local_endpoint();
 
+#ifdef YAHAT_ENABLE_METRICS
+    auto * metrics = instance.metrics();
+#endif
+
     bool close = false;
     beast::error_code ec;
     beast::flat_buffer buffer{1024 * 64};
@@ -189,6 +201,12 @@ void DoSession(streamT& streamPtr,
         if (!req.keep_alive()) {
             close = true;
         }
+
+#ifdef YAHAT_ENABLE_METRICS
+        if (metrics) {
+            metrics->incomingrRequests()->inc();
+        }
+#endif
 
         // TODO: Check that the client accepts our json reply
         Request request{req.base().target(), req.body(), to_type(req.base().method()), &yield};
@@ -486,6 +504,10 @@ std::future<void> HttpServer::start()
                     continue;
                 }
 
+                if (metrics()) {
+                    metrics()->tcpConnections()->inc();
+                }
+
                 errorCnt = 0;
 
                 if (is_tls) {
@@ -594,6 +616,12 @@ Response HttpServer::onRequest(Request &req) noexcept
         try {
             LOG_TRACE << "Found route '" << best_route << "' for target '" << tw << "'";
             req.route = best_route;
+#ifdef YAHAT_ENABLE_METRICS
+            auto * metrics = this->metrics();
+            if (metrics) {
+                metrics->incrementHttpRequestCount(best_route, toString(req.type));
+            }
+#endif
             return best_handler->onReqest(req);
         } catch(const Response& resp) {
             return resp;
@@ -613,12 +641,22 @@ void HttpServer::startWorkers()
         workers_.emplace_back([this, i] {
                 LOG_DEBUG << "HTTP worker thread #" << i << " starting up.";
                 try {
+#ifdef YAHAT_ENABLE_METRICS
+                    if (metrics()) {
+                        metrics()->workerThreads()->inc();
+                    }
+#endif
                     ctx_.run();
                 } catch(const exception& ex) {
                     LOG_ERROR << "HTTP worker #" << i
                               << " caught exception: "
                               << ex.what();
                 }
+#ifdef YAHAT_ENABLE_METRICS
+                if (metrics()) {
+                    metrics()->workerThreads()->dec();
+                }
+#endif
                 LOG_DEBUG << "HTTP worker thread #" << i << " done.";
         });
     }

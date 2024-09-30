@@ -64,11 +64,14 @@ message(STATUS "Using ${CMAKE_CXX_COMPILER}")
 include(cmake/3rdparty.cmake)
     
 add_library(${PROJECT_NAME}
+    include/yahat/HttpServer.h
+    include/yahat/Metrics.h
+    include/yahat/YahatInstanceMetrics.h
     include/yahat/logging.h
     src/HttpServer.cpp
+    src/Metrics.cpp
+    src/YahatInstanceMetrics.cpp
     src/logging.cpp
-    include/yahat/HttpServer.h
-    include/yahat/Metrics.h src/Metrics.cpp
     )
 
 target_link_libraries(${PROJECT_NAME}

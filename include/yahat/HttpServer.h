@@ -25,6 +25,8 @@
 
 namespace yahat {
 
+class YahatInstanceMetrics;
+
 struct HttpConfig {
     /*! Number of threads for the API and UI.
      *  Note that db and file access
@@ -73,6 +75,14 @@ struct HttpConfig {
      *   -  Access-Control-Allow-Headers: *
      */
     bool auto_handle_cors = true;
+
+#ifdef YAHAT_ENABLE_METRICS
+    /*! Enable metrics for this server
+     *
+     *  Metrics are available at /metrics
+     */
+    bool enable_metrics = true;
+#endif
 };
 
 boost::uuids::uuid generateUuid();
@@ -308,10 +318,21 @@ public:
         return config_;
     }
 
+    auto * metrics() noexcept {
+        return metrics_;
+    }
+
+    const auto * metrics() const noexcept {
+        return metrics_;
+    }
+
 private:
     void startWorkers();
 
     const HttpConfig& config_;
+#ifdef YAHAT_ENABLE_METRICS
+    YahatInstanceMetrics *metrics_{};
+#endif
     const authenticator_t authenticator_;
     std::map<std::string, handler_t> routes_;
     boost::asio::io_context ctx_;
