@@ -61,8 +61,8 @@ private:
     gauge_t * worker_threads_{};
     std::map<std::string, counter_t *> http_requests_; // Count of requests per route
 
-    alignas(std::hardware_destructive_interference_size) std::mutex mutex_;
-    char mpadding_[std::hardware_destructive_interference_size - sizeof(std::mutex)];
+    alignas(cache_line_size_) std::mutex mutex_;
+    char mpadding_[cache_line_size_ - sizeof(std::mutex)];
 };
 
 }

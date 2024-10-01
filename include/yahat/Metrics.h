@@ -20,6 +20,8 @@
 #ifdef YAHAT_ENABLE_METRICS
 namespace yahat {
 
+static constexpr auto cache_line_size_ = 64u; //std::hardware_destructive_interference_size;
+
 /*! Metrics are designed to be compatible with OpenMetrics
  *
  *  See: https://openmetrics.io/
@@ -301,7 +303,6 @@ public:
     }
 
 private:
-    static constexpr auto cache_line_size_ = 64u; //std::hardware_destructive_interference_size;
     std::map<std::string, std::unique_ptr<DataType>> metrics_;
     static std::optional<std::chrono::system_clock::time_point> now_; // Fot unit tests
 
