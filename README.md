@@ -12,4 +12,4 @@ Currently tested only with Linux and boost 1.81. Uses boost.asio and boost.beast
 Uses C++17.
 
 ## Status
-Pre-beta.
+Beta
