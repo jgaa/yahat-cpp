@@ -179,16 +179,11 @@ void DoSession(streamT& streamPtr,
                boost::asio::yield_context& yield)
 {
 #ifdef YAHAT_ENABLE_METRICS
+    YahatInstanceMetrics::gauge_scoped_t count_session;
     auto * metrics = instance.internalMetrics();
     if (metrics) {
-        metrics->currentSessions()->inc();
+        count_session = metrics->currentSessions()->instance();
     }
-
-    ScopedExit dec_session_gauge{[&] {
-        if (metrics) {
-            metrics->currentSessions()->dec();
-        }
-    }};
 #endif
 
     assert(streamPtr);
@@ -693,15 +688,11 @@ void HttpServer::startWorkers()
     for(size_t i = 0; i < config_.num_http_threads; ++i) {
         workers_.emplace_back([this, i] {
 #ifdef YAHAT_ENABLE_METRICS
-            if (internalMetrics()) {
-                internalMetrics()->workerThreads()->inc();
-            }
+            YahatInstanceMetrics::gauge_scoped_t count_instance;
 
-            ScopedExit dec_worker_gauge{[&] {
-                if (internalMetrics()) {
-                    internalMetrics()->workerThreads()->dec();
-                }
-            }};
+            if (internalMetrics()) {
+                count_instance = internalMetrics()->workerThreads()->instance();
+            }
 #endif
             LOG_DEBUG << "HTTP worker thread #" << i << " starting up.";
             try {

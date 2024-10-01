@@ -27,6 +27,48 @@ namespace yahat {
 class Metrics
 {
 public:
+
+    /*! Scoped is a helper class to increment and decrement a metric in a scope
+     *
+     *  The metric is incremented when the Scoped is created and decremented when it is destroyed.
+     *
+     *  The metric must be a Counter or Gauge.
+     */
+    template <typename T>
+    class Scoped {
+    public:
+        Scoped() = default;
+        Scoped(T * metric) : metric_(metric) {
+            assert(metric_);
+            metric->inc();
+        }
+
+        Scoped(const Scoped&) = delete;
+        Scoped(Scoped&& v) {
+            metric_ = v.metric_;
+            v.metric_ = nullptr;
+        }
+
+        void operator = (const Scoped&) = delete;
+        void operator = (Scoped&& v) {
+            if (metric_) {
+                metric_->dec();
+            }
+            metric_ = v.metric_;
+            v.metric_ = nullptr;
+        }
+
+        ~Scoped() {
+            if (metric_) {
+                metric_->dec();
+                metric_ = {};
+            }
+        }
+
+    private:
+        T * metric_{};
+    };
+
     using label_t = std::pair<std::string, std::string>;
     using labels_t = std::vector<label_t>;
     class DataType {
@@ -108,6 +150,10 @@ public:
             return renderCreated(target, true);
         }
 
+        Scoped<Counter> instance() {
+            return Scoped(this);
+        }
+
     private:
         std::atomic<T> value_{T{}};
         std::string total_name_ = makeNameWithSuffixAndLabels(name(), "total", labels());
@@ -134,6 +180,10 @@ public:
 
         T value() const noexcept {
             return value_.load(std::memory_order_relaxed);
+        }
+
+        Scoped<Gauge> instance() {
+            return Scoped(this);
         }
 
         std::ostream& render(std::ostream& target) const override {

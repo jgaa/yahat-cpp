@@ -42,6 +42,9 @@ public:
 
     void incrementHttpRequestCount(const std::string_view route, std::string_view method);
 
+    using gauge_scoped_t = Metrics::Scoped<gauge_t>;
+    using counter_scoped_t = Metrics::Scoped<counter_t>;
+
 private:
     Metrics metrics_;
     counter_t * incoming_requests_{};
