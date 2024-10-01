@@ -182,7 +182,7 @@ void DoSession(streamT& streamPtr,
     YahatInstanceMetrics::gauge_scoped_t count_session;
     auto * metrics = instance.internalMetrics();
     if (metrics) {
-        count_session = metrics->currentSessions()->instance();
+        count_session = metrics->currentSessions()->scoped();
     }
 #endif
 
@@ -691,7 +691,7 @@ void HttpServer::startWorkers()
             YahatInstanceMetrics::gauge_scoped_t count_instance;
 
             if (internalMetrics()) {
-                count_instance = internalMetrics()->workerThreads()->instance();
+                count_instance = internalMetrics()->workerThreads()->scoped();
             }
 #endif
             LOG_DEBUG << "HTTP worker thread #" << i << " starting up.";

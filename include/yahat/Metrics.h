@@ -150,7 +150,7 @@ public:
             return renderCreated(target, true);
         }
 
-        Scoped<Counter> instance() {
+        Scoped<Counter> scoped() {
             return Scoped(this);
         }
 
@@ -182,7 +182,7 @@ public:
             return value_.load(std::memory_order_relaxed);
         }
 
-        Scoped<Gauge> instance() {
+        Scoped<Gauge> scoped() {
             return Scoped(this);
         }
 
