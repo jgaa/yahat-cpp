@@ -301,11 +301,12 @@ public:
     }
 
 private:
+    static constexpr auto cache_line_size_ = 64u; //std::hardware_destructive_interference_size;
     std::map<std::string, std::unique_ptr<DataType>> metrics_;
     static std::optional<std::chrono::system_clock::time_point> now_; // Fot unit tests
 
-    alignas(std::hardware_destructive_interference_size) std::mutex mutex_;
-    char mpadding_[std::hardware_destructive_interference_size - sizeof(std::mutex)];
+    alignas(cache_line_size_) std::mutex mutex_;
+    std::array<char, cache_line_size_ - sizeof(std::mutex)> mpadding_{};
 };
 
 } // ns
