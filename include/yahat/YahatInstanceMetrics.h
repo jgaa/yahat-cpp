@@ -26,9 +26,16 @@ public:
     using counter_t = Metrics::Counter<uint64_t>;
     using gauge_t = Metrics::Gauge<uint64_t>;
 
-    YahatInstanceMetrics();
+    /*! Constructor
+     *
+     *  @param metrics Pointer to an existing Metrics instance. If nullptr, a new instance will be created.
+     */
+    YahatInstanceMetrics(Metrics * metrics = {});
 
-    Metrics& metrics() { return metrics_; }
+    Metrics& metrics() {
+        assert(metrics_ != nullptr);
+        return *metrics_;
+    }
 
     counter_t * incomingRequests() { return incoming_requests_; }
     counter_t * tcpConnections() { return tcp_connections_; }
@@ -46,7 +53,8 @@ public:
     using counter_scoped_t = Metrics::Scoped<counter_t>;
 
 private:
-    Metrics metrics_;
+    Metrics *metrics_{};
+    std::unique_ptr<Metrics> metrics_instance_; // If we need to allocate it ourselves
     counter_t * incoming_requests_{};
     counter_t * tcp_connections_{};
     gauge_t * current_sessions_{};

@@ -452,6 +452,18 @@ HttpServer::HttpServer(const HttpConfig &config, authenticator_t authHandler, co
 #endif
 }
 
+#ifdef YAHAT_ENABLE_METRICS
+HttpServer::HttpServer(const HttpConfig &config, authenticator_t authHandler, Metrics &metricsInstance, const std::string &branding)
+: config_{config}, authenticator_(std::move(authHandler)), server_{branding.empty() ? "yahat "s + YAHAT_VERSION : branding + "/yahat "s + YAHAT_VERSION}
+{
+    metrics_ = make_shared<YahatInstanceMetrics>(&metricsInstance);
+
+    addRoute(config_.metrics_target, metrics_->metricsHandler(), "GET");
+    LOG_INFO << "Metrics enabled at '" << config.metrics_target <<'\'';
+    addRoute(config_.metrics_target, metrics_->metricsHandler(), "GET");
+}
+#endif
+
 std::future<void> HttpServer::start()
 {
 

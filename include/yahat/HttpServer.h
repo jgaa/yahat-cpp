@@ -268,6 +268,17 @@ public:
 
     HttpServer(const HttpConfig& config, authenticator_t authHandler, const std::string& branding = {});
 
+#ifdef YAHAT_ENABLE_METRICS
+    /*! Constructor
+     *
+     *  @param config Configuration for the HTTP server
+     *  @param authHandler Authentication handler
+     *  @param metricsInstance Metrics instance to use. This must remain valid for the lifetime of the HTTP server
+     *  @param branding Branding string to use for the server id
+     */
+    HttpServer(const HttpConfig& config, authenticator_t authHandler, Metrics& metricsInstance, const std::string& branding = {});
+#endif
+
     /*! Starts the server and returns immediately */
     std::future<void> start();
 

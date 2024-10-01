@@ -42,14 +42,21 @@ private:
 } // anon ns
 
 
-YahatInstanceMetrics::YahatInstanceMetrics() {
+YahatInstanceMetrics::YahatInstanceMetrics(Metrics * metricsInstace) {
 
-    incoming_requests_ = metrics_.AddCounter<uint64_t>("yahat_incoming_requests", "Number of incoming requests. Counted before validation", {});
-    tcp_connections_ = metrics_.AddCounter<uint64_t>("yahat_tcp_connections", "Number of TCP connections", {});
-    current_sessions_ = metrics_.AddGauge<uint64_t>("yahat_current_sessions", "Number of current sessions", {});
-    worker_threads_ = metrics_.AddGauge<uint64_t>("yahat_worker_threads", "Number of worker threads", {});
+    if (metricsInstace) {
+        metrics_ = metricsInstace;
+    } else {
+        metrics_instance_ = make_unique<Metrics>();
+        metrics_ = metrics_instance_.get();
+    }
 
-    metrics_.AddInfo("yahat_system", "Yahat information", {}, {
+    incoming_requests_ = metrics().AddCounter<uint64_t>("yahat_incoming_requests", "Number of incoming requests. Counted before validation", {});
+    tcp_connections_ = metrics().AddCounter<uint64_t>("yahat_tcp_connections", "Number of TCP connections", {});
+    current_sessions_ = metrics().AddGauge<uint64_t>("yahat_current_sessions", "Number of current sessions", {});
+    worker_threads_ = metrics().AddGauge<uint64_t>("yahat_worker_threads", "Number of worker threads", {});
+
+    metrics().AddInfo("yahat_system", "Yahat information", {}, {
         {"version", YAHAT_VERSION},
         {"boost", BOOST_LIB_VERSION},
         //{"compiler", BOOST_COMPILER}, // very noisy
@@ -70,7 +77,7 @@ void YahatInstanceMetrics::addHttpRequests(std::string_view target, const std::s
         lock_guard lock{mutex_};
         for (const auto& method : range) {
             const auto key = format("{}{}", method, target);
-            http_requests_[key] = metrics_.AddCounter<uint64_t>(
+            http_requests_[key] = metrics().AddCounter<uint64_t>(
                 "yahat_http_requests", "Number of incoming http requests",
                 "count", {{"route", string(target)}, {"method", string{method}}});
         }
