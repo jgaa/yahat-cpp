@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <string_view>
 #include <future>
+#include <span>
 
 #include <boost/asio.hpp>
 #include <boost/asio/spawn.hpp>
@@ -24,6 +25,9 @@
 #include "yahat/config.h"
 
 namespace yahat {
+
+class YahatInstanceMetrics;
+class Metrics;
 
 struct HttpConfig {
     /*! Number of threads for the API and UI.
@@ -73,6 +77,16 @@ struct HttpConfig {
      *   -  Access-Control-Allow-Headers: *
      */
     bool auto_handle_cors = true;
+
+#ifdef YAHAT_ENABLE_METRICS
+    /*! Enable metrics for this server
+     *
+     *  Metrics are available at /metrics
+     */
+    bool enable_metrics = true;
+
+    std::string metrics_target = "/metrics";
+#endif
 };
 
 boost::uuids::uuid generateUuid();
@@ -254,6 +268,17 @@ public:
 
     HttpServer(const HttpConfig& config, authenticator_t authHandler, const std::string& branding = {});
 
+#ifdef YAHAT_ENABLE_METRICS
+    /*! Constructor
+     *
+     *  @param config Configuration for the HTTP server
+     *  @param authHandler Authentication handler
+     *  @param metricsInstance Metrics instance to use. This must remain valid for the lifetime of the HTTP server
+     *  @param branding Branding string to use for the server id
+     */
+    HttpServer(const HttpConfig& config, authenticator_t authHandler, Metrics& metricsInstance, const std::string& branding = {});
+#endif
+
     /*! Starts the server and returns immediately */
     std::future<void> start();
 
@@ -265,7 +290,26 @@ public:
 
     void stop();
 
+#ifdef YAHAT_ENABLE_METRICS
+    /*! Get the metrics for this instance
+     *
+     *  You can use the metrics object to add your own metrics for your app.
+     *
+     *  @return The metrics object ot nullptr if metrics is disabled by configuration.
+     */
+    Metrics * metrics() noexcept;
+
+    template <typename... T>
+    void addRoute(std::string_view target, handler_t handler, T... methods)
+    {
+        std::array<std::string_view, sizeof...(T)> m = {methods...};
+        addRoute_(target, handler, m);
+    }
+
+    void addRoute_(std::string_view target, handler_t handler, const std::span<std::string_view> metricMethods = {});
+#else
     void addRoute(std::string_view target, handler_t handler);
+#endif
 
     static std::string_view version() noexcept;
 
@@ -308,10 +352,23 @@ public:
         return config_;
     }
 
+#ifdef YAHAT_ENABLE_METRICS
+    auto * internalMetrics() noexcept {
+        return metrics_.get();
+    }
+
+    const auto * internalMetrics() const noexcept {
+        return metrics_.get();
+    }
+#endif
+
 private:
     void startWorkers();
 
     const HttpConfig& config_;
+#ifdef YAHAT_ENABLE_METRICS
+    std::shared_ptr<YahatInstanceMetrics> metrics_{};
+#endif
     const authenticator_t authenticator_;
     std::map<std::string, handler_t> routes_;
     boost::asio::io_context ctx_;

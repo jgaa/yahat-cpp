@@ -16,6 +16,7 @@
 
 #include "yahat/logging.h"
 #include "yahat/HttpServer.h"
+#include "yahat/YahatInstanceMetrics.h"
 
 using namespace std;
 using namespace std;
@@ -27,15 +28,40 @@ namespace net = boost::asio;            // from <boost/asio.hpp>
 using namespace std::placeholders;
 using namespace std::string_literals;
 
-ostream& operator << (ostream& o, const yahat::Request::Type& t) {
-    static const array<string, 6> types = {"GET", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"};
 
-    return o << types.at(static_cast<size_t>(t));
+namespace   {
+string_view toString(yahat::Request::Type type) {
+    static constexpr auto types = to_array({"GET", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"});
+    return types.at(static_cast<size_t>(type));
+}
+
+} // anon ns
+
+ostream& operator << (ostream& o, const yahat::Request::Type& t) {
+    return o << toString(t);
 }
 
 namespace yahat {
 
 namespace {
+
+template <typename T>
+struct ScopedExit {
+    explicit ScopedExit(T&& fn)
+        : fn_{std::move(fn)} {}
+
+    ScopedExit(const ScopedExit&) = delete;
+    ScopedExit(ScopedExit&&) = delete;
+
+    ~ScopedExit() {
+        fn_();
+    }
+
+    ScopedExit& operator =(const ScopedExit&) = delete;
+    ScopedExit& operator =(ScopedExit&&) = delete;
+private:
+    T fn_;
+};
 
 string generateUuid() {
     static boost::uuids::random_generator uuid_gen_;
@@ -152,6 +178,14 @@ void DoSession(streamT& streamPtr,
                HttpServer& instance,
                boost::asio::yield_context& yield)
 {
+#ifdef YAHAT_ENABLE_METRICS
+    YahatInstanceMetrics::gauge_scoped_t count_session;
+    auto * metrics = instance.internalMetrics();
+    if (metrics) {
+        count_session = metrics->currentSessions()->scoped();
+    }
+#endif
+
     assert(streamPtr);
     auto& stream = *streamPtr;
 
@@ -189,6 +223,12 @@ void DoSession(streamT& streamPtr,
         if (!req.keep_alive()) {
             close = true;
         }
+
+#ifdef YAHAT_ENABLE_METRICS
+        if (metrics) {
+            metrics->incomingRequests()->inc();
+        }
+#endif
 
         // TODO: Check that the client accepts our json reply
         Request request{req.base().target(), req.body(), to_type(req.base().method()), &yield};
@@ -402,7 +442,27 @@ HttpServer::HttpServer(const HttpConfig &config, authenticator_t authHandler, co
     : config_{config}, authenticator_(std::move(authHandler))
     , server_{branding.empty() ? "yahat "s + YAHAT_VERSION : branding + "/yahat "s + YAHAT_VERSION}
 {
+#ifdef YAHAT_ENABLE_METRICS
+    if (config.enable_metrics) {
+        metrics_ = make_shared<YahatInstanceMetrics>();
+
+        LOG_INFO << "Metrics enabled at '" << config.metrics_target <<'\'';
+        addRoute(config_.metrics_target, metrics_->metricsHandler(), "GET");
+    }
+#endif
 }
+
+#ifdef YAHAT_ENABLE_METRICS
+HttpServer::HttpServer(const HttpConfig &config, authenticator_t authHandler, Metrics &metricsInstance, const std::string &branding)
+: config_{config}, authenticator_(std::move(authHandler)), server_{branding.empty() ? "yahat "s + YAHAT_VERSION : branding + "/yahat "s + YAHAT_VERSION}
+{
+    metrics_ = make_shared<YahatInstanceMetrics>(&metricsInstance);
+
+    addRoute(config_.metrics_target, metrics_->metricsHandler(), "GET");
+    LOG_INFO << "Metrics enabled at '" << config.metrics_target <<'\'';
+    addRoute(config_.metrics_target, metrics_->metricsHandler(), "GET");
+}
+#endif
 
 std::future<void> HttpServer::start()
 {
@@ -485,6 +545,11 @@ std::future<void> HttpServer::start()
                     ++errorCnt;
                     continue;
                 }
+#ifdef YAHAT_ENABLE_METRICS
+                if (internalMetrics()) {
+                    internalMetrics()->tcpConnections()->inc();
+                }
+#endif
 
                 errorCnt = 0;
 
@@ -496,7 +561,7 @@ std::future<void> HttpServer::start()
                         } catch(const exception& ex) {
                             LOG_ERROR << "Caught exception from DoSession [HTTPS]: " << ex.what();
                         }
-                    });
+                    }, boost::asio::detached);
 
                 } else {
                     boost::asio::spawn(acceptor.get_executor(), [this, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
@@ -506,11 +571,11 @@ std::future<void> HttpServer::start()
                         } catch(const exception& ex) {
                             LOG_ERROR << "Caught exception from DoSession [HTTP]: " << ex.what();
                         }
-                    });
+                    }, boost::asio::detached);
                 }
             }
 
-        });
+        }, boost::asio::detached);
     }; // for resolver endpoint
 
 
@@ -526,7 +591,7 @@ void HttpServer::run()
         LOG_DEBUG << "The HTTP server is done.";
     } BOOST_SCOPE_EXIT_END
 
-        auto future = start();
+    auto future = start();
     future.get();
 }
 
@@ -544,11 +609,28 @@ void HttpServer::stop()
     promise_.set_value();
 }
 
+#ifdef YAHAT_ENABLE_METRICS
+Metrics *HttpServer::metrics() noexcept
+{
+    static Metrics *m{metrics_ ? &metrics_->metrics() : nullptr};
+    return m;
+}
+#endif
+
+#ifdef YAHAT_ENABLE_METRICS
+void HttpServer::addRoute_(std::string_view target, handler_t handler, const std::span<std::string_view> methods)
+#else
 void HttpServer::addRoute(std::string_view target, handler_t handler)
+#endif
 {
     if (target.size() == 0) {
         throw runtime_error{"A target's route cannot be empty"};
     }
+#ifdef YAHAT_ENABLE_METRICS
+    if (internalMetrics()) {
+        internalMetrics()->addHttpRequests(target, methods);
+    }
+#endif
     string key{target};
     routes_[std::move(key)] = handler;
 }
@@ -594,6 +676,12 @@ Response HttpServer::onRequest(Request &req) noexcept
         try {
             LOG_TRACE << "Found route '" << best_route << "' for target '" << tw << "'";
             req.route = best_route;
+#ifdef YAHAT_ENABLE_METRICS
+            auto * metrics = this->internalMetrics();
+            if (metrics) {
+                metrics->incrementHttpRequestCount(best_route, toString(req.type));
+            }
+#endif
             return best_handler->onReqest(req);
         } catch(const Response& resp) {
             return resp;
@@ -611,15 +699,22 @@ void HttpServer::startWorkers()
 {
     for(size_t i = 0; i < config_.num_http_threads; ++i) {
         workers_.emplace_back([this, i] {
-                LOG_DEBUG << "HTTP worker thread #" << i << " starting up.";
-                try {
-                    ctx_.run();
-                } catch(const exception& ex) {
-                    LOG_ERROR << "HTTP worker #" << i
-                              << " caught exception: "
-                              << ex.what();
-                }
-                LOG_DEBUG << "HTTP worker thread #" << i << " done.";
+#ifdef YAHAT_ENABLE_METRICS
+            YahatInstanceMetrics::gauge_scoped_t count_instance;
+
+            if (internalMetrics()) {
+                count_instance = internalMetrics()->workerThreads()->scoped();
+            }
+#endif
+            LOG_DEBUG << "HTTP worker thread #" << i << " starting up.";
+            try {
+                ctx_.run();
+            } catch(const exception& ex) {
+                LOG_ERROR << "HTTP worker #" << i
+                          << " caught exception: "
+                          << ex.what();
+            }
+            LOG_DEBUG << "HTTP worker thread #" << i << " done.";
         });
     }
 }

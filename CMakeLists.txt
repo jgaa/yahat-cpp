@@ -1,22 +1,22 @@
 cmake_minimum_required(VERSION 3.13)
 
-#option(YAHAT_WITH_TESTS "Compile tests" OFF)
+option(YAHAT_WITH_TESTS "Compile tests" OFF)
 option(YAHAT_WITH_EXAMPLES "Compile examples" ON)
 option(USE_LOGFAULT "Use logfault" OFF)
 option(YAHAT_USE_VALGRIND "Enable Valgrind" OFF)
+option(YAHAT_ENABLE_METRICS "Enable Metrics (OpenMetrics compatible)" ON)
 
 if (YAHAT_USE_VALGRIND)
    set (VALDGRIND_ARGS -DBOOST_USE_VALGRIND=1)
 endif()
 
-
 if (NOT DEFINED _VERSION)
-    set(YAHAT_VERSION 0.0.4)
+    set(YAHAT_VERSION 0.1.0)
 endif()
 add_definitions(-DYAHAT_VERSION=\"${YAHAT_VERSION}\")
 
 if (NOT DEFINED CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD 20)
 endif()
 
 project(yahat VERSION ${YAHAT_VERSION} LANGUAGES CXX)
@@ -31,10 +31,17 @@ endif()
 include(GNUInstallDirs)
 
 if(NOT DEFINED USE_BOOST_VERSION)
-    set(USE_BOOST_VERSION 1.75)
+    set(USE_BOOST_VERSION 1.81)
 endif()
 
-find_package(Boost ${USE_BOOST_VERSION} REQUIRED COMPONENTS
+if (YAHAT_WITH_TESTS)
+    find_package(GTest REQUIRED)
+endif()
+
+# https://cmake.org/cmake/help/latest/policy/CMP0167.html
+# Disable warning
+cmake_policy(SET CMP0167 OLD)
+find_package(Boost ${USE_BOOST_VERSION} REQUIRED MODULE COMPONENTS
     system
     program_options
     coroutine
@@ -57,11 +64,24 @@ message(STATUS "Using ${CMAKE_CXX_COMPILER}")
 include(cmake/3rdparty.cmake)
     
 add_library(${PROJECT_NAME}
+    include/yahat/HttpServer.h
+    include/yahat/Metrics.h
+    include/yahat/YahatInstanceMetrics.h
     include/yahat/logging.h
     src/HttpServer.cpp
+    src/Metrics.cpp
+    src/YahatInstanceMetrics.cpp
     src/logging.cpp
-    include/yahat/HttpServer.h
     )
+
+target_link_libraries(${PROJECT_NAME}
+    PUBLIC
+        ${Boost_LIBRARIES}
+        ${OPENSSL_LIBRARIES}
+        ${ZLIB_LIBRARIES}
+        ${CMAKE_THREAD_LIBS_INIT}
+)
+
 
 if (USE_LOGFAULT)
    message("Using logfault for logging")
@@ -72,7 +92,6 @@ endif()
 
 # We create a configuration file so that other code that include our header files gets the correct configuration.
 CONFIGURE_FILE(config.h.in ${CMAKE_BINARY_DIR}/generated-include/${PROJECT_NAME}/config.h)
-
 
 target_include_directories(${PROJECT_NAME}
     PUBLIC
@@ -117,10 +136,16 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC -DBOOST_COROUTINES_NO_DEPRECAT
 target_compile_definitions(${PROJECT_NAME} PUBLIC -DBOOST_COROUTINE_NO_DEPRECATION_WARNING=1)
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${VALDGRIND_ARGS})
 
-#if (YAHAT_WITH_TESTS)
-#    enable_testing()
-#    add_subdirectory(tests)
-#endif()
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    message(STATUS "Using g++, adding -Winterference-size flag")
+    target_compile_options(${PROJECT_NAME} PUBLIC -Wno-interference-size)
+endif()
+
+
+if (YAHAT_WITH_TESTS)
+   enable_testing()
+   add_subdirectory(tests)
+endif()
 
 if (YAHAT_WITH_EXAMPLES)
     add_subdirectory(examples)
