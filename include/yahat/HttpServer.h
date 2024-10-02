@@ -66,6 +66,9 @@ struct HttpConfig {
     /*! IO timeout in seconds for requests in/out */
     unsigned http_io_timeout = 120;
 
+    /*! Maximum size for a compressed request */
+    uint max_decompressed_size = 10 * 1024 * 1024; // 10 MB
+
     /*! CORS is a resposne to Javascript madness.
      *
      *  In an API server, the normal handling is usually
@@ -157,7 +160,12 @@ struct Request {
     }
 };
 
-struct Response {    
+struct Response {
+    enum class Compression {
+        NONE,
+        GZIP
+    };
+
     int code = 200;
     std::string reason = "OK";
     std::string body;
@@ -167,6 +175,7 @@ struct Response {
     static std::string_view getMimeType(std::string_view type = "json");
     bool close = false;
     mutable bool cors = false;
+    mutable Compression compression = Compression::NONE;
 
     bool ok() const noexcept {
         return code / 100 == 2;

@@ -1,6 +1,9 @@
 
 #include <fstream>
 
+#define ZLIB_CONST
+#include <zlib.h>
+
 #include <boost/beast/http/string_body.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/spawn.hpp>
@@ -34,6 +37,84 @@ string_view toString(yahat::Request::Type type) {
     static constexpr auto types = to_array({"GET", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"});
     return types.at(static_cast<size_t>(type));
 }
+
+string decompressGzip(string_view compressedData, size_t maxDecompressedBytes) {
+    z_stream zs{};
+    string decompressed_data;
+    decompressed_data.reserve(compressedData.size() * 2);
+
+    // Initialize zlib for decompression (inflate)
+    if (inflateInit2(&zs, 16 + MAX_WBITS) != Z_OK) {
+        throw std::runtime_error("inflateInit2 failed");
+    }
+
+    zs.next_in = reinterpret_cast<const Bytef*>(compressedData.data());
+    zs.avail_in = compressedData.size();
+
+    int ret{};
+    array<char, 4096> buffer{};
+    decompressed_data.clear();
+
+    do {
+        zs.next_out = reinterpret_cast<unsigned char*>(buffer.data());
+        zs.avail_out = buffer.size();
+
+        ret = inflate(&zs, 0);
+
+        if (ret == Z_STREAM_ERROR || ret == Z_DATA_ERROR || ret == Z_MEM_ERROR) {
+            inflateEnd(&zs);
+            throw std::runtime_error("Decompression error");
+        }
+
+        decompressed_data.append(buffer.data(), buffer.size() - zs.avail_out);
+
+        // Check the size limit to prevent decompression bombs
+        if (decompressed_data.size() > maxDecompressedBytes) {
+            inflateEnd(&zs);
+            throw std::runtime_error("Decompressed data exceeds maximum allowed size");
+        }
+
+    } while (ret != Z_STREAM_END);
+
+    inflateEnd(&zs);
+    return decompressed_data;
+}
+
+string compressGzip(string_view input) {
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+    string compressed_output;
+    compressed_output.reserve(input.size());
+
+    // Initialize zlib for compression (deflate)
+    if (deflateInit2(&zs, Z_BEST_COMPRESSION, Z_DEFLATED, 16 + MAX_WBITS, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+        throw std::runtime_error("deflateInit2 failed");
+    }
+
+    zs.next_in = reinterpret_cast<const unsigned char*>(input.data());
+    zs.avail_in = input.size();
+    array<char, 4096> buffer{};
+    int ret{};
+
+    do {
+        zs.next_out = reinterpret_cast<unsigned char*>(buffer.data());
+        zs.avail_out = buffer.size();
+
+        ret = deflate(&zs, Z_FINISH);
+
+        if (ret == Z_STREAM_ERROR) {
+            deflateEnd(&zs);
+            throw std::runtime_error("Compression error");
+        }
+
+        compressed_output.append(buffer.data(), buffer.size() - zs.avail_out);
+
+    } while (ret != Z_STREAM_END);
+
+    deflateEnd(&zs);
+    return compressed_output;
+}
+
 
 } // anon ns
 
@@ -135,14 +216,16 @@ auto to_type(const http::verb& verb) {
 template <typename T>
 auto makeReply(HttpServer& server, T&res, const Response& r, bool closeConnection, LogRequest& lr, Request::Type rt) {
 
+    string_view body = r.body;
+    string body_buffer;
     if (rt != Request::Type::OPTIONS) {
         if (r.body.empty()) {
             // Use the http code and reason to compose a json reply
-            res.body() = r.responseStatusAsJson();
+            body_buffer = r.responseStatusAsJson();
+            body = body_buffer;
             auto mime = Response::getMimeType();
             res.base().set(http::field::content_type, mime);
         } else {
-            res.body() = r.body;
             auto mime = r.mime_type;
             if (mime.empty()) {
                 mime = r.mimeType(); // Try to get it from the context
@@ -155,6 +238,14 @@ auto makeReply(HttpServer& server, T&res, const Response& r, bool closeConnectio
             res.base().set(http::field::content_type, mime);
         }
     }
+
+    if (!body.empty() && r.compression == Response::Compression::GZIP) {
+        body_buffer = compressGzip(body);
+        body = body_buffer;
+        res.base().set(http::field::content_encoding, "gzip");
+    }
+
+    res.body() = body;
     res.result(r.code);
     res.reason(r.reason);
     res.base().set(http::field::server, server.serverId());
@@ -231,7 +322,19 @@ void DoSession(streamT& streamPtr,
 #endif
 
         // TODO: Check that the client accepts our json reply
-        Request request{req.base().target(), req.body(), to_type(req.base().method()), &yield};
+
+        string req_body;
+        if (req[http::field::content_encoding] == "gzip") {
+            req_body = decompressGzip(req.body(), instance.config().max_decompressed_size);
+        } else {
+            req_body = req.body();
+        }
+
+        Request request{req.base().target(), std::move(req_body), to_type(req.base().method()), &yield};
+        Response::Compression compression = Response::Compression::NONE;
+        if (req[http::field::accept_encoding].find("gzip") != std::string::npos) {
+            compression = Response::Compression::GZIP;
+        }
 
         LogRequest lr{request};
         lr.remote =  beast::get_lowest_layer(stream).socket().remote_endpoint();
@@ -253,6 +356,7 @@ void DoSession(streamT& streamPtr,
             LOG_TRACE << "This is an OPTIONS request. Just returning a dummy CORS reply";
             Response r{200, "OK"};
             r.cors = true;
+            r.compression = compression;
             http::response<http::string_body> res;
             res.base().set(http::field::server, instance.serverId());
             makeReply(instance, res, r, close, lr, request.type);
@@ -268,6 +372,7 @@ void DoSession(streamT& streamPtr,
             LOG_TRACE << "Request was unauthorized!";
 
             Response r{401, "Access Denied!"};
+            r.compression = compression;
             http::response<http::string_body> res;
             res.base().set(http::field::server, instance.serverId());
             if (instance.config().enable_http_basic_auth) {
@@ -375,6 +480,7 @@ void DoSession(streamT& streamPtr,
         }
 
         reply.cors = instance.config().auto_handle_cors;
+        reply.compression = compression;
 
         LOG_TRACE << "Preparing reply";
         http::response<http::string_body> res;
