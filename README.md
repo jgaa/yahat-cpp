@@ -24,13 +24,13 @@ their own metrics.
 
 Supported metrics types:
 
--[x] Counter
--[x] Gauge
--[x] Info
--[ ] Histogram
--[ ] Summary
--[ ] Stateset
--[ ] Untyped
+- [x] Counter
+- [x] Gauge
+- [x] Info
+- [ ] Histogram
+- [ ] Summary
+- [ ] Stateset
+- [ ] Untyped
 
 Metrics can be scraped by Prometheus and most other metrics collectors.
 
