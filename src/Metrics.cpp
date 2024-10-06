@@ -58,6 +58,8 @@ void Metrics::generate(std::ostream &target)
 
         metric->render(target);
     }
+
+    target << "# EOF\n";
 }
 
 Metrics::DataType::DataType(Type type, std::string name, std::string help, std::string unit, labels_t labels)
@@ -78,8 +80,7 @@ ostream &Metrics::DataType::renderCreated(std::ostream &target, bool postfix) co
     if (!postfix) {
         target << created_name_ << ' ';
     }
-    renderNumber(target, std::chrono::duration<double>(updated().time_since_epoch()).count(), 3) << '\n';
-    return target;
+    return target << chrono::system_clock::to_time_t(updated()) << '\n';
 }
 
 string Metrics::DataType::makeKey(const std::string &name, const labels_t &labels, std::optional<DataType::Type> type)

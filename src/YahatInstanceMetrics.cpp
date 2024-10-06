@@ -78,8 +78,7 @@ void YahatInstanceMetrics::addHttpRequests(std::string_view target, const std::s
         for (const auto& method : range) {
             const auto key = format("{}{}", method, target);
             http_requests_[key] = metrics().AddCounter<uint64_t>(
-                "yahat_http_requests", "Number of incoming http requests",
-                "count", {{"route", string(target)}, {"method", string{method}}});
+                "yahat_http_requests", "Number of incoming http requests", {}, {{"route", string(target)}, {"method", string{method}}});
         }
     };
 
