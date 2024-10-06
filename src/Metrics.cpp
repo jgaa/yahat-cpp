@@ -78,7 +78,7 @@ ostream &Metrics::DataType::renderCreated(std::ostream &target, bool postfix) co
     if (!postfix) {
         target << created_name_ << ' ';
     }
-    renderNumber(target, std::chrono::duration<double>(created_.time_since_epoch()).count(), 3) << '\n';
+    renderNumber(target, std::chrono::duration<double>(updated().time_since_epoch()).count(), 3) << '\n';
     return target;
 }
 

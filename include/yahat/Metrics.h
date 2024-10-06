@@ -116,6 +116,13 @@ public:
             return target << value;
         }
 
+        void touch () noexcept {
+            updated_.store(now(), std::memory_order_relaxed);
+        }
+
+        std::chrono::system_clock::time_point updated() const noexcept {
+            return updated_.load(std::memory_order_relaxed);
+        }
 
         private:
         std::string makeMetricName() const noexcept;
@@ -127,7 +134,7 @@ public:
         const std::string unit_;
         const labels_t labels_;
         const std::string metricName_;
-        const std::chrono::system_clock::time_point created_{now()};
+        std::atomic<std::chrono::system_clock::time_point> updated_{now()};
         const std::string created_name_ = makeNameWithSuffixAndLabels(name_, "created", labels_);
     };
 
@@ -140,6 +147,7 @@ public:
         void inc(T value=1) noexcept {
             assert(value >= 0);
             value_.fetch_add(value, std::memory_order_relaxed);
+            touch();
         }
 
         T value() const noexcept {
@@ -169,15 +177,18 @@ public:
 
         void set(T value) noexcept {
             value_.store(value, std::memory_order_relaxed);
+            touch();
         }
 
         void inc(T value=1) noexcept {
             value_.fetch_add(value, std::memory_order_relaxed);
+            touch();
         }
 
         void dec(T value=1) noexcept {
             assert((value_.load() - value) >= 0);
             value_.fetch_sub(value, std::memory_order_relaxed);
+            touch();
         }
 
         T value() const noexcept {
