@@ -11,7 +11,7 @@ if (YAHAT_USE_VALGRIND)
 endif()
 
 if (NOT DEFINED _VERSION)
-    set(YAHAT_VERSION 0.1.2)
+    set(YAHAT_VERSION 0.1.3)
 endif()
 add_definitions(-DYAHAT_VERSION=\"${YAHAT_VERSION}\")
 
@@ -40,7 +40,10 @@ endif()
 
 # https://cmake.org/cmake/help/latest/policy/CMP0167.html
 # Disable warning
-cmake_policy(SET CMP0167 OLD)
+if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.30.0")
+    cmake_policy(SET CMP0167 OLD)
+endif()
+
 find_package(Boost ${USE_BOOST_VERSION} REQUIRED MODULE COMPONENTS
     system
     program_options
