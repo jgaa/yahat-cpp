@@ -592,10 +592,18 @@ std::future<void> HttpServer::start()
               << (is_tls ? "HTTPS" : "HTTP")
               << " port " << port;
 
-    auto endpoint = resolver.resolve({config_.http_endpoint, port});
+    auto results = resolver.resolve(config_.http_endpoint, port);
+#if BOOST_VERSION >= 107000
+    // Newer Boost (1.70 and later) using results_type
+    for (const auto& result : results) {
+        tcp::endpoint ep = result.endpoint();
+#else
+    // Older Boost (pre-1.70) using iterators
     tcp::resolver::iterator end;
-    for(; endpoint != end; ++endpoint) {
-        tcp::endpoint ep = endpoint->endpoint();
+    for (auto it = results.begin(); it != end; ++it) {
+        tcp::endpoint ep = it->endpoint();
+
+#endif
         LOG_INFO << "Starting " << (is_tls ? "HTTPS" : "HTTP") << " endpoint: " << ep;
 
         boost::asio::spawn(ctx_, [this, ep, is_tls] (boost::asio::yield_context yield) {
