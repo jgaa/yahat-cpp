@@ -6,6 +6,7 @@
 #include <string_view>
 #include <future>
 #include <span>
+#include <memory>
 
 #include <boost/asio.hpp>
 #include <boost/asio/spawn.hpp>
@@ -103,7 +104,7 @@ struct Auth {
     std::any extra;
 };
 
-struct Request {
+struct Request : public std::enable_shared_from_this <Request>{
     enum class Type {
         GET,
         PUT,
@@ -135,6 +136,7 @@ struct Request {
     boost::asio::yield_context *yield = {};
     std::string all_arguments;
     std::map<std::string_view, std::string_view> arguments;
+    std::vector<std::pair<std::string_view, std::string_view>> cookies;
 
     /*! Send one SSE event to the client.
      *
@@ -158,6 +160,21 @@ struct Request {
     bool expectBody() const noexcept {
         return type == Type::POST || type == Type::PUT || type == Type::PATCH;
     }
+
+    std::string_view getCookie(std::string_view name) const noexcept{
+        if (auto it = std::find_if(cookies.begin(), cookies.end(), [name](const auto& p) { return p.first == name; });
+            it != cookies.end()) {
+            return it->second;
+        }
+        return {};
+    }
+
+    std::string_view getArgument(std::string_view name) const noexcept {
+        if (auto it = arguments.find(name); it != arguments.end()) {
+            return it->second;
+        }
+        return {};
+    }
 };
 
 struct Response {
@@ -176,6 +193,7 @@ struct Response {
     bool close = false;
     mutable bool cors = false;
     mutable Compression compression = Compression::NONE;
+    std::vector<std::string> cookies;
 
     bool ok() const noexcept {
         return code / 100 == 2;

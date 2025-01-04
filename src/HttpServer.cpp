@@ -330,7 +330,13 @@ void DoSession(streamT& streamPtr,
             req_body = req.body();
         }
 
-        Request request{req.base().target(), std::move(req_body), to_type(req.base().method()), &yield};
+        auto curr_req = make_shared<Request>(req.base().target(), std::move(req_body), to_type(req.base().method()), &yield);
+        assert(curr_req);
+        auto& request = *curr_req;
+        // copy cookies
+        for(auto param : http::param_list(req[http::field::cookie])) {
+            request.cookies.emplace_back(param);
+        }
         Response::Compression compression = Response::Compression::NONE;
         if (req[http::field::accept_encoding].find("gzip") != std::string::npos) {
             compression = Response::Compression::GZIP;
