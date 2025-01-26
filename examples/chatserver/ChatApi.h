@@ -10,9 +10,18 @@ class ChatMgr;
 class ChatApi : public yahat::RequestHandler
 {
 public:
+    class SseHandler : public yahat::SseQueueHandler {
+    public:
+        SseHandler(yahat::HttpServer& server)
+            : SseQueueHandler(server)
+        {}
+
+        ~SseHandler();
+    };
+
     struct User {
         std::string name;
-        std::weak_ptr<yahat::Request> sse_req;
+        std::weak_ptr<SseHandler> sse_;
     };
 
     ChatApi(ChatMgr& chatMgr);
@@ -33,14 +42,14 @@ private:
         users_.erase(uuid);
     }
 
-    void setSseReq(boost::uuids::uuid uuid, const yahat::Request& req) {
-        std::lock_guard lock{mutex_};
-        if (auto it = users_.find(uuid); it != users_.end()) {
-            it->second.sse_req = const_cast<yahat::Request&>(req).weak_from_this();
-        } else {
-            throw std::invalid_argument("User dont exist");
-        }
-    }
+    // void setSseReq(boost::uuids::uuid uuid, const yahat::Request& req) {
+    //     std::lock_guard lock{mutex_};
+    //     if (auto it = users_.find(uuid); it != users_.end()) {
+    //         it->second.sse_req = const_cast<yahat::Request&>(req).weak_from_this();
+    //     } else {
+    //         throw std::invalid_argument("User dont exist");
+    //     }
+    // }
 
     ChatMgr& chat_mgr_;
     std::map<boost::uuids::uuid, User> users_;

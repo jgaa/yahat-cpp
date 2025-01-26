@@ -9,7 +9,6 @@
 #include <boost/asio/spawn.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
-#include <boost/beast/http.hpp>
 #include <boost/beast/ssl.hpp>
 #include <boost/beast/ssl/ssl_stream.hpp>
 #include <boost/beast/version.hpp>
@@ -124,6 +123,60 @@ ostream& operator << (ostream& o, const yahat::Request::Type& t) {
 
 namespace yahat {
 
+bool SseHandler::send(std::string_view message)
+{
+    stream_->set_timeout(std::chrono::seconds(server().config().http_io_timeout));
+    boost::system::error_code ec;
+
+    if (!sse_initialized_) {
+        LOG_TRACE << "Initializing SSE for request ";// << request.uuid;
+        http::response<http::empty_body>  res{http::status::ok, 11};
+        res.set(http::field::server, "yahat "s + YAHAT_VERSION);
+        res.set(http::field::content_type, "text/event-stream");
+        res.set(http::field::keep_alive, "true");
+        res.chunked(true);
+        sse_sr_.emplace(res);
+
+        if (!stream_->async_write_header(*sse_sr_)) {
+            return false;
+        }
+
+        sse_initialized_ = true;
+
+        // Set up a callback for the read-direction to make sure that
+        // we detect if the SSE connection is closed while it is idle.
+
+        boost::asio::mutable_buffer rbb{eos_data_.buffer.data(), eos_data_.buffer.size()};
+
+        stream_->async_read_stream(rbb, [this](boost::system::error_code ec, size_t) {
+            LOG_DEBUG << "Request " << eos_data_.uuid
+                      << " - Read handler called: " << ec;
+            eos_data_.ok = false;
+            if (eos_data_.notify_connection_closed) {
+                eos_data_.notify_connection_closed();
+            }
+        });
+    }
+
+    if (!message.empty()) {
+        boost::asio::const_buffer b{message.data(), message.size()};
+        auto c = http::make_chunk(b);
+        if (!stream_->async_write_stream(http::make_chunk(b))) {
+            return false;
+        }
+    }
+
+    return true;
+};
+
+SseQueueHandler::SseQueueHandler(HttpServer &server)
+    : SseHandler{server}, timer_{server.getCtx()} {
+
+    setOnConnectionClosed([this] {
+        closeSse();
+    });
+}
+
 namespace {
 
 template <typename T>
@@ -142,6 +195,57 @@ struct ScopedExit {
     ScopedExit& operator =(ScopedExit&&) = delete;
 private:
     T fn_;
+};
+
+template <typename T>
+class StreamImpl : public yahat::Continuation::Stream {
+public:
+    explicit StreamImpl(T& stream, boost::asio::yield_context& yield)
+        : stream_{stream}, yield_{yield} {}
+
+    size_t async_read_stream(boost::asio::mutable_buffer buffer) override {
+        boost::system::error_code ec;
+        auto len = boost::asio::async_read(stream_, buffer, yield_[ec]);
+        if (ec) {
+            return 0;
+        }
+        return len;
+    }
+
+    void async_read_stream(boost::asio::mutable_buffer buffer,
+                           std::function<void (const boost::system::error_code &, std::size_t)> handler) override {
+        boost::system::error_code ec;
+        auto len = boost::asio::async_read(stream_, buffer, yield_[ec]);
+        if (ec) {
+            handler(ec, 0);
+        } else {
+            handler(ec, len);
+        }
+    }
+    bool async_write_stream(boost::asio::const_buffer buffer) override {
+        boost::system::error_code ec;
+        boost::beast::net::async_write(stream_, buffer, yield_[ec]);
+        return !ec;
+    }
+    bool async_write_stream(const chunk_t &chunk) override {
+        boost::system::error_code ec;
+        boost::beast::net::async_write(stream_, chunk, yield_[ec]);
+        return !ec;
+    }
+    bool async_write_header(boost::beast::http::response_serializer<http::empty_body> &ser) override {
+        boost::system::error_code ec;
+        http::async_write_header(stream_, ser, yield_[ec]);
+        return !ec;
+    }
+
+    void set_timeout(chrono::seconds timeout) override {
+        beast::get_lowest_layer(stream_).expires_after(timeout);
+    }
+
+
+private:
+    T& stream_;
+    boost::asio::yield_context& yield_;
 };
 
 string generateUuid() {
@@ -405,96 +509,27 @@ void DoSession(streamT& streamPtr,
             }
         }
 
-        bool sse_initialized = false;
-        optional<http::response_serializer<http::empty_body>> sse_sr;
-        struct EosData {
-            array<char, 1> buffer;
-            atomic_bool ok{true};
-            boost::uuids::uuid uuid;
-            std::function<void()> notify_connection_closed;
-        };
-
-        // Needed if the request is a SSE subscription
-        auto eos_data = make_shared<EosData>();
-        eos_data->uuid = request.uuid;
-
-        // Setup support for SSE
-        request.sse_send = [&](string_view sse) {
-            beast::get_lowest_layer(stream).expires_after(std::chrono::seconds(instance.config().http_io_timeout));
-            boost::system::error_code ec;
-
-            if (!sse_initialized) {
-               LOG_TRACE << "Initializing SSE for request " << request.uuid;
-               http::response<http::empty_body>  res{http::status::ok, 11};
-               res.set(http::field::server, "yahat "s + YAHAT_VERSION);
-               res.set(http::field::content_type, "text/event-stream");
-               res.set(http::field::keep_alive, "true");
-               res.chunked(true);
-               sse_sr.emplace(res);
-
-               http::async_write_header(stream, *sse_sr, yield[ec]);
-               if (ec) {
-                   LOG_DEBUG << "Request " << request.uuid
-                             << " - failed to send SSE header: " << ec;
-                   return false;
-               }
-
-               sse_initialized = true;
-
-               // Set up a callback for the read-direction to make sure that
-               // we detect if the SSE connection is closed while it is idle.
-
-               boost::asio::mutable_buffer rbb{eos_data->buffer.data(), eos_data->buffer.size()};
-               auto uuid = request.uuid;
-
-               if (request.notify_connection_closed) {
-                   LOG_TRACE << "Added notify_connection_closed while setting up SSE";
-                   eos_data->notify_connection_closed = std::move(request.notify_connection_closed);
-               }
-
-               boost::asio::async_read(stream, rbb, [eos_data](boost::system::error_code ec, size_t) {
-                   LOG_DEBUG << "Request " << eos_data->uuid
-                             << " - Read handler called: " << ec;
-                   eos_data->ok = false;
-                   if (eos_data->notify_connection_closed) {
-                       eos_data->notify_connection_closed();
-                   }
-               });
-            }
-
-            if (!sse.empty()) {
-                boost::asio::const_buffer b{sse.data(), sse.size()};
-                boost::beast::net::async_write(stream, http::make_chunk(b), yield[ec]);
-
-                if (ec) {
-                    LOG_DEBUG << "Request " << request.uuid
-                              << " - failed to send SSE payload: " << ec;
-                    return false;
-                }
-            }
-
-            return true;
-        };
-
-        request.probe_connection_ok = [eos_data]() {
-            return eos_data && eos_data->ok;
-        };
-
-        const auto reply = instance.onRequest(request);
+        auto reply = instance.onRequest(request);
         if (reply.close) {
             close = true;
         }
 
-        reply.cors = instance.config().auto_handle_cors;
-        reply.compression = compression;
+        if (auto cont = reply.continuation()) {
+            StreamImpl stream_wrapper(stream, yield);
+            cont->proceed(stream_wrapper, yield);
+            close = true;
+        } else {
+            reply.cors = instance.config().auto_handle_cors;
+            reply.compression = compression;
 
-        LOG_TRACE << "Preparing reply";
-        http::response<http::string_body> res;
-        makeReply(instance, res, reply, close, lr, request.type);
-        http::async_write(stream, res, yield[ec]);
-        if(ec) {
-            LOG_WARN << "write failed: " << ec.message();
-            return;
+            LOG_TRACE << "Preparing reply";
+            http::response<http::string_body> res;
+            makeReply(instance, res, reply, close, lr, request.type);
+            http::async_write(stream, res, yield[ec]);
+            if(ec) {
+                LOG_WARN << "write failed: " << ec.message();
+                return;
+            }
         }
 
         LOG_TRACE << "End of loop";

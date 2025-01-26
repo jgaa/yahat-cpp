@@ -117,7 +117,6 @@ int main(int argc, char* argv[]) {
     });
 #endif
 
-    ChatMgr chat;
     try {
         HttpServer chatserver{config, [](const AuthReq& ar) {
             Auth auth;
@@ -126,6 +125,8 @@ int main(int argc, char* argv[]) {
             auth.extra = "nobody";
             return auth;
         }, "YahatChat"};
+
+        ChatMgr chat{chatserver.getCtx()};
 
         chatserver.addRoute("/", make_shared<WebApp>());
         chatserver.addRoute("/chat", make_shared<ChatApi>(chat));

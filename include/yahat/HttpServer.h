@@ -7,11 +7,13 @@
 #include <future>
 #include <span>
 #include <memory>
+#include <queue>
 
 #include <boost/asio.hpp>
 #include <boost/asio/spawn.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/version.hpp>
+#include <boost/beast/http.hpp>
 
 #if BOOST_VERSION >= 107500
 #   define USING_BOOST_JSON
@@ -29,6 +31,7 @@ namespace yahat {
 
 class YahatInstanceMetrics;
 class Metrics;
+class HttpServer;
 
 struct HttpConfig {
     /*! Number of threads for the API and UI.
@@ -138,14 +141,6 @@ struct Request : public std::enable_shared_from_this <Request>{
     std::map<std::string_view, std::string_view> arguments;
     std::vector<std::pair<std::string_view, std::string_view>> cookies;
 
-    /*! Send one SSE event to the client.
-     *
-     *  @param sseEvent Complete and correctly formatted SSE event.
-     *
-     *  @exception std::exception if the operation fails.
-     */
-    std::function<void(std::string_view sseEvent)> sse_send;
-
     /*! Check if the connection is still open to the client.
      */
     std::function<bool()> probe_connection_ok;
@@ -177,11 +172,25 @@ struct Request : public std::enable_shared_from_this <Request>{
     }
 };
 
+struct Continuation;
+
 struct Response {
     enum class Compression {
         NONE,
         GZIP
     };
+
+    Response() = default;
+    Response(int code, std::string reason)
+        : code{code}, reason{std::move(reason)} {}
+    Response(int code, std::string reason, std::string body)
+        : code{code}, reason{std::move(reason)}, body{std::move(body)} {}
+    Response(int code, std::string reason, std::string body, std::string target)
+        : code{code}, reason{std::move(reason)}, body{std::move(body)}, target{std::move(target)} {}
+    Response(int code, std::string reason, std::string body, std::string target, std::string_view mime_type)
+        : code{code}, reason{std::move(reason)}, body{std::move(body)}, target{std::move(target)}, mime_type{mime_type} {}
+
+    virtual ~Response() = default;
 
     int code = 200;
     std::string reason = "OK";
@@ -210,6 +219,174 @@ struct Response {
         return {};
 #endif
     }
+
+    virtual bool continueAsSse() const noexcept {
+        return false;
+    }
+
+    virtual std::shared_ptr<Continuation> continuation() {
+        return {};
+    }
+};
+
+class Continuation {
+public:
+    class Stream {
+    public:
+        using chunk_t = decltype(boost::beast::http::make_chunk(boost::asio::const_buffer{}));
+
+        virtual ~Stream() = default;
+
+        virtual size_t async_read_stream(boost::asio::mutable_buffer buffer) = 0;
+
+        virtual void async_read_stream(boost::asio::mutable_buffer buffer,
+                                       std::function<void(const boost::system::error_code&, std::size_t)> handler) = 0;
+
+        virtual bool async_write_stream(boost::asio::const_buffer buffer) = 0;
+
+        virtual bool async_write_stream(const chunk_t& chunk) = 0;
+
+        virtual bool async_write_header(boost::beast::http::response_serializer<boost::beast::http::empty_body>& ser) = 0;
+
+        virtual void set_timeout(std::chrono::seconds timeout) = 0;
+    };
+
+
+    Continuation() = default;
+    virtual ~Continuation() = default;
+
+    virtual Response proceed(Stream& stream, boost::asio::yield_context& yield) = 0;
+};
+
+
+/*! Basic SSE handler where the app can implement the actual work-flow */
+struct SseHandler : public Continuation {
+
+    // Prevent copy and move
+    SseHandler(HttpServer& server)
+        : server_{server} {}
+
+    SseHandler(const SseHandler&) = delete;
+    SseHandler(SseHandler&&) = delete;
+    SseHandler & operator=(const SseHandler&) = delete;
+    SseHandler & operator=(SseHandler&&) = delete;
+
+
+    /*! Send function type.
+     *
+     *  Note that the send function is a stateful co-routine
+     *  an will suspend and resume as needed using the
+     *  HTTP sessions yield context.
+     */
+
+    Response proceed(Stream& stream, boost::asio::yield_context& yield) override {
+        stream_ = &stream;
+        yield_ = &yield;
+        return proceeding();
+    }
+
+protected:
+    /*! Called by the server to allow the handler to proceed with the SSE stream.
+     *
+     *  This function is called by the server after the handler has been called
+     *  and the handler has set up the send function.
+     *
+     *  The handler can now start sending messages to the client.
+     */
+    virtual Response proceeding() = 0;
+
+    // Send a sse message.
+    bool send(std::string_view message);
+
+    auto& getYield() const noexcept {
+        assert(yield_);
+        return *yield_;
+    }
+
+    auto& server() noexcept {
+        return server_;
+    }
+
+    void setOnConnectionClosed(std::function<void()> cb) {
+        eos_data_.notify_connection_closed = std::move(cb);
+    }
+
+private:
+    HttpServer& server_;
+    struct EosData {
+        std::array<char, 1> buffer;
+        std::atomic_bool ok{true};
+        boost::uuids::uuid uuid;
+        std::function<void()> notify_connection_closed;
+    } eos_data_;
+    Stream *stream_{};
+    boost::asio::yield_context *yield_{};
+    bool sse_initialized_{false};
+    std::optional<boost::beast::http::response_serializer<boost::beast::http::empty_body>> sse_sr_;
+};
+
+/*! SSE handler where an app can append messages to a queue to send to the client
+ *
+ *  Convenience class for handling SSE streams
+ */
+class SseQueueHandler : public SseHandler {
+public:
+    SseQueueHandler(HttpServer& server);
+
+    void sendSse(std::string message) {
+        {
+            std::lock_guard lock{mutex_};
+            queue_.push(std::move(message));
+        }
+        timer_.cancel_one();
+    }
+
+    bool active() const noexcept {
+        return active_;
+    }
+
+    void closeSse() {
+        active_ = false;
+        timer_.cancel();
+    }
+
+private:
+    Response proceeding() override {
+        active_ = true;
+        do {
+            while(!queue_.empty()) {
+                if (!send(queue_.front())) {
+                    active_ = false;
+                    break;
+                }
+                queue_.pop();
+            }
+            if (active_) {
+                boost::system::error_code ec;
+                timer_.expires_after(std::chrono::seconds{30});
+                timer_.async_wait(getYield()[ec]);
+                if (ec && ec != boost::asio::error::operation_aborted) {
+                    active_ = false;
+                    break;
+                }
+            }
+        } while (active_);
+    }
+
+    std::optional<std::string> next() {
+        std::lock_guard lock{mutex_};
+        if (queue_.empty()) {
+            return {};
+        }
+        auto msg = std::move(queue_.front());
+        queue_.pop();
+        return msg;
+    }
+
+    boost::asio::steady_timer timer_;
+    bool active_{false};
+    std::queue<std::string> queue_;
+    std::mutex mutex_;
 };
 
 struct AuthReq {

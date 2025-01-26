@@ -7,10 +7,14 @@
 #include <mutex>
 #include <memory>
 
+#include <boost/asio.hpp>
+
 class ChatMgr
 {
 public:
-    ChatMgr();
+    ChatMgr(boost::asio::io_context& ioCtx)
+        : io_ctx_{&ioCtx}
+    {}
 
     enum class Event {
         MESSAGE,
@@ -49,9 +53,12 @@ public:
 
     std::vector<std::string> listUsers();
 
+    auto& ioCtx() { return *io_ctx_; }
+
 private:
     void sendEvent(Event event, std::string_view user, std::string_view message = {});
     // Wrap mutex in a padding to make sure it's on its own cache line
     std::mutex mutex_;
     std::map<std::string, std::shared_ptr<User>> users_;
+    boost::asio::io_context *io_ctx_{};
 };

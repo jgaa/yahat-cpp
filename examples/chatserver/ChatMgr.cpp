@@ -1,7 +1,5 @@
 #include "ChatMgr.h"
 
-ChatMgr::ChatMgr() {}
-
 using namespace std;
 
 void ChatMgr::addUser(const std::string &name)

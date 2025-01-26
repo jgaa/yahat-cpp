@@ -24,6 +24,7 @@ std::string createJsonPayload(std::string_view username, std::string_view messag
     // Convert the JSON object to a string and return it
     return boost::json::serialize(json_obj);
 }
+
 } // anon ns
 
 ChatApi::ChatApi(ChatMgr &chatMgr)
@@ -97,43 +98,48 @@ yahat::Response ChatApi::onReqest(const yahat::Request &req)
             return {400, "Missing 'user' cookie and argument"};
         }
 
-        // Set up a SSE stream to the user
-        //req.sse_send(format("user-joined: {}\n", user));
-
         // Now, associate this user with this sse stream
-        setSseReq(user_uuid, req);
+
+        auto sse = make_shared<SseHandler>(chat_mgr_.server());
+        {
+            lock_guard lock{mutex_};
+            auto &user = users_.at(user_uuid);
+            user.sse_ = sse.get();
+            user.sse_exists_ = sse->exists();
+        }
+
         chat_mgr_.setEventCb(user, [user_uuid, this](auto event, auto user, auto message) {
             static constexpr auto event_names = to_array<string_view>({"message", "user-joined", "user-left"});
 
-            std::shared_ptr<yahat::Request> sse_req;
-            string remove_name;
+            SseHandler *sse{};
             {
                 lock_guard lock{mutex_};
                 if (auto it = users_.find(user_uuid); it != users_.end()) {
-                    if (auto req = it->second.sse_req.lock()) {
-                        sse_req = req;
-                    } else {
-                        // The user has disconnected, remove it outside the lock
-                        remove_name = it->second.name;
-                        // We have the lock so just remove it directly
-                        users_.erase(user_uuid);
-                    }
+                    if (it->second.sse_exists_.expired()) {
+                        LOG_DEBUG << "User " << user_uuid << " has disconnected, ignoring the sse stream";
+                        return;
+                    };
+                    sse = it->second.sse_;
+                    assert(sse);
                 }
             }
 
-            if (sse_req) {
+            if (sse) {
                 // Send the event it outside the lock
-                sse_req->sse_send(format("event: {}\n{}\n",
-                                         event_names.at(static_cast<uint>(event)),
-                                         createJsonPayload(user, message)));
-            }
-
-            if (!remove_name.empty()) {
-                chat_mgr_.removeUser(remove_name);
+                sse->sendSse(format("event: {}\n{}\n",
+                                    event_names.at(static_cast<uint>(event)),
+                                    createJsonPayload(user, message)));
             }
         });
+
+        return std::move(*sse);
     }
 
     return {400, "Unsupported request"};
 }
 
+
+ChatApi::SseHandler::~SseHandler()
+{
+    chat_mgr_->removeUser(user_uuid_);
+}
