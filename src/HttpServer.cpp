@@ -1,5 +1,9 @@
 
 #include <fstream>
+#include <ranges>
+#include <string>
+#include <string_view>
+#include <algorithm>
 
 #define ZLIB_CONST
 #include <zlib.h>
@@ -32,6 +36,40 @@ using namespace std::string_literals;
 
 
 namespace   {
+
+// Helper function to trim whitespace from a std::string_view
+constexpr std::string_view trim(std::string_view str) {
+    while (!str.empty() && std::isspace(str.front())) {
+        str.remove_prefix(1);
+    }
+    while (!str.empty() && std::isspace(str.back())) {
+        str.remove_suffix(1);
+    }
+    return str;
+}
+
+// Function to create a lazy view over the cookies
+constexpr auto parse_cookies(std::string_view cookie_header) {
+    return cookie_header
+           // Split the header into individual cookie key-value pairs by ';'
+           | std::views::split(';')
+           // Transform each key-value pair into a std::pair<std::string_view, std::string_view>
+           | std::views::transform([](auto &&cookie) -> std::pair<std::string_view, std::string_view> {
+                 // Convert the range to a std::string_view
+                 std::string_view cookie_str = std::string_view(std::ranges::begin(cookie), std::ranges::end(cookie));
+                 // Find the '=' separator
+                 auto pos = cookie_str.find('=');
+                 if (pos == std::string_view::npos) {
+                     // If there's no '=', treat it as a key with an empty value
+                     return {trim(cookie_str), std::string_view{}};
+                 }
+                 // Split into key and value, trimming both
+                 std::string_view key = trim(cookie_str.substr(0, pos));
+                 std::string_view value = trim(cookie_str.substr(pos + 1));
+                 return {key, value};
+             });
+}
+
 string_view toString(yahat::Request::Type type) {
     static constexpr auto types = to_array({"GET", "PUT", "PATCH", "POST", "DELETE", "OPTIONS"});
     return types.at(static_cast<size_t>(type));
@@ -125,11 +163,12 @@ namespace yahat {
 
 bool SseHandler::send(std::string_view message)
 {
-    stream_->set_timeout(std::chrono::seconds(server().config().http_io_timeout));
+    //stream_->set_timeout(std::chrono::seconds(server().config().http_io_timeout));
+    stream_->disable_timeout();
     boost::system::error_code ec;
 
     if (!sse_initialized_) {
-        LOG_TRACE << "Initializing SSE for request ";// << request.uuid;
+        LOG_TRACE << "Initializing SSE...";
         http::response<http::empty_body>  res{http::status::ok, 11};
         res.set(http::field::server, "yahat "s + YAHAT_VERSION);
         res.set(http::field::content_type, "text/event-stream");
@@ -150,7 +189,7 @@ bool SseHandler::send(std::string_view message)
 
         stream_->async_read_stream(rbb, [this](boost::system::error_code ec, size_t) {
             LOG_DEBUG << "Request " << eos_data_.uuid
-                      << " - Read handler called: " << ec;
+                      << " - Read handler called: " << ec.message();
             eos_data_.ok = false;
             if (eos_data_.notify_connection_closed) {
                 eos_data_.notify_connection_closed();
@@ -159,6 +198,7 @@ bool SseHandler::send(std::string_view message)
     }
 
     if (!message.empty()) {
+        LOG_TRACE << "Sending message: " << message;
         boost::asio::const_buffer b{message.data(), message.size()};
         auto c = http::make_chunk(b);
         if (!stream_->async_write_stream(http::make_chunk(b))) {
@@ -175,6 +215,60 @@ SseQueueHandler::SseQueueHandler(HttpServer &server)
     setOnConnectionClosed([this] {
         closeSse();
     });
+}
+
+void SseQueueHandler::sendSse(std::string message) {
+    LOG_TRACE << "Queuing sse message: " << message;
+    {
+        std::lock_guard lock{mutex_};
+        queue_.push(std::move(message));
+    }
+    timer_.cancel_one();
+}
+
+void SseQueueHandler::sendSse(std::string_view eventName, std::string_view data)
+{
+    auto msg = format("event: {}\ndata: {}\n\n", eventName, data);
+    sendSse(msg);
+}
+
+void SseQueueHandler::closeSse() {
+    active_ = false;
+    timer_.cancel();
+}
+
+Response SseQueueHandler::proceeding() {
+    active_ = true;
+    do {
+        while(!queue_.empty()) {
+            if (!send(queue_.front())) {
+                active_ = false;
+                break;
+            }
+            queue_.pop();
+        }
+        if (active_) {
+            boost::system::error_code ec;
+            timer_.expires_after(std::chrono::seconds{30});
+            timer_.async_wait(getYield()[ec]);
+            if (ec && ec != boost::asio::error::operation_aborted) {
+                active_ = false;
+                break;
+            }
+        }
+    } while (active_);
+
+    return {};
+}
+
+std::optional<string> SseQueueHandler::next() {
+    std::lock_guard lock{mutex_};
+    if (queue_.empty()) {
+        return {};
+    }
+    auto msg = std::move(queue_.front());
+    queue_.pop();
+    return msg;
 }
 
 namespace {
@@ -215,12 +309,7 @@ public:
     void async_read_stream(boost::asio::mutable_buffer buffer,
                            std::function<void (const boost::system::error_code &, std::size_t)> handler) override {
         boost::system::error_code ec;
-        auto len = boost::asio::async_read(stream_, buffer, yield_[ec]);
-        if (ec) {
-            handler(ec, 0);
-        } else {
-            handler(ec, len);
-        }
+        boost::asio::async_read(stream_, buffer, handler);
     }
     bool async_write_stream(boost::asio::const_buffer buffer) override {
         boost::system::error_code ec;
@@ -237,11 +326,12 @@ public:
         http::async_write_header(stream_, ser, yield_[ec]);
         return !ec;
     }
-
     void set_timeout(chrono::seconds timeout) override {
         beast::get_lowest_layer(stream_).expires_after(timeout);
     }
-
+    void disable_timeout() override {
+        beast::get_lowest_layer(stream_).expires_never();
+    }
 
 private:
     T& stream_;
@@ -360,6 +450,10 @@ auto makeReply(HttpServer& server, T&res, const Response& r, bool closeConnectio
         res.base().set(http::field::access_control_allow_methods, "GET,OPTIONS,POST,PUT,PATCH,DELETE");
         res.base().set(http::field::access_control_allow_headers, "Authorization, Content-Encoding, Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers");
     }
+    // copy cookies from r.cookies to res
+    for(const auto& c : r.cookies) {
+        res.base().insert(http::field::set_cookie, format("{}={}", c.first, c.second));
+    }
 
     if (auto mime = r.mimeType(); !mime.empty()) {
         res.base().set(http::field::content_type, {mime.data(), mime.size()});
@@ -434,12 +528,20 @@ void DoSession(streamT& streamPtr,
             req_body = req.body();
         }
 
-        auto curr_req = make_shared<Request>(req.base().target(), std::move(req_body), to_type(req.base().method()), &yield);
+        auto curr_req = make_shared<Request>(req.base().target(), std::move(req_body), to_type(req.base().method()), &yield, isTls);
         assert(curr_req);
         auto& request = *curr_req;
         // copy cookies
-        for(auto param : http::param_list(req[http::field::cookie])) {
-            request.cookies.emplace_back(param);
+        const auto cookies = req[http::field::cookie];
+        LOG_DEBUG << "Cookie header: " << cookies;
+        for(auto c : parse_cookies(cookies)) {
+            request.cookies.emplace_back(c);
+        }
+        //auto cc = http::param_list(cookies);
+
+        //for(auto param : http::param_list(req[http::field::cookie])) {
+        for(auto& c : http::param_list(cookies)) {
+            request.cookies.emplace_back(c);
         }
         Response::Compression compression = Response::Compression::NONE;
         if (req[http::field::accept_encoding].find("gzip") != std::string::npos) {

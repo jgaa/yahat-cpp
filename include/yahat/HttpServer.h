@@ -122,13 +122,19 @@ struct Request : public std::enable_shared_from_this <Request>{
     Request(std::string undecodedTtarget,
             std::string body,
             Type type,
-            boost::asio::yield_context *yield)
+            boost::asio::yield_context *yield,
+            bool isTls = false)
         : body{std::move(body)}
-        , type{type}, yield{yield} {
+        , type{type}, yield{yield}
+        , is_https{isTls} {
         init(undecodedTtarget);
     }
 
     void init(const std::string& undecodedTtarget);
+
+    bool isHttps() const noexcept {
+        return is_https;
+    }
 
     std::string target;
     std::string_view route; // The part of the target that was matched by the chosen route.
@@ -140,6 +146,7 @@ struct Request : public std::enable_shared_from_this <Request>{
     std::string all_arguments;
     std::map<std::string_view, std::string_view> arguments;
     std::vector<std::pair<std::string_view, std::string_view>> cookies;
+    bool is_https{false};
 
     /*! Check if the connection is still open to the client.
      */
@@ -183,14 +190,18 @@ struct Response {
     Response() = default;
     Response(int code, std::string reason)
         : code{code}, reason{std::move(reason)} {}
-    Response(int code, std::string reason, std::string body)
+    Response(int code, std::string reason, std::string &&body)
         : code{code}, reason{std::move(reason)}, body{std::move(body)} {}
-    Response(int code, std::string reason, std::string body, std::string target)
+    Response(int code, std::string reason, std::string_view body)
+        : code{code}, reason{std::move(reason)}, body{std::string{body}} {}
+    Response(int code, std::string reason, std::string && body, std::string target)
         : code{code}, reason{std::move(reason)}, body{std::move(body)}, target{std::move(target)} {}
-    Response(int code, std::string reason, std::string body, std::string target, std::string_view mime_type)
+    Response(int code, std::string reason, std::string_view body, std::string target)
+        : code{code}, reason{std::move(reason)}, body{body}, target{std::move(target)} {}
+    Response(int code, std::string reason, std::string && body, std::string target, std::string_view mime_type)
         : code{code}, reason{std::move(reason)}, body{std::move(body)}, target{std::move(target)}, mime_type{mime_type} {}
-
-    virtual ~Response() = default;
+    Response(int code, std::string reason, std::string_view body, std::string target, std::string_view mime_type)
+        : code{code}, reason{std::move(reason)}, body{body}, target{std::move(target)}, mime_type{mime_type} {}
 
     int code = 200;
     std::string reason = "OK";
@@ -202,7 +213,7 @@ struct Response {
     bool close = false;
     mutable bool cors = false;
     mutable Compression compression = Compression::NONE;
-    std::vector<std::string> cookies;
+    std::vector<std::pair<std::string, std::string>> cookies;
 
     bool ok() const noexcept {
         return code / 100 == 2;
@@ -220,13 +231,19 @@ struct Response {
 #endif
     }
 
-    virtual bool continueAsSse() const noexcept {
-        return false;
-    }
-
-    virtual std::shared_ptr<Continuation> continuation() {
+    std::shared_ptr<Continuation> continuation() {
+        if (cont_) {
+            return std::move(cont_);
+        }
         return {};
     }
+
+    void setContinuation(std::shared_ptr<Continuation> cont) {
+        cont_ = std::move(cont);
+    }
+
+private:
+    std::shared_ptr<Continuation> cont_;
 };
 
 class Continuation {
@@ -249,6 +266,8 @@ public:
         virtual bool async_write_header(boost::beast::http::response_serializer<boost::beast::http::empty_body>& ser) = 0;
 
         virtual void set_timeout(std::chrono::seconds timeout) = 0;
+
+        virtual void disable_timeout() = 0;
     };
 
 
@@ -333,55 +352,35 @@ class SseQueueHandler : public SseHandler {
 public:
     SseQueueHandler(HttpServer& server);
 
-    void sendSse(std::string message) {
-        {
-            std::lock_guard lock{mutex_};
-            queue_.push(std::move(message));
-        }
-        timer_.cancel_one();
-    }
+    /*! Sends a raw SSE message.
+     *
+     *  The message must be formatted according to the SSE requirements.
+     *
+     *  An empty message will no be sent, but it will initialize the SSE connection
+     *  if it is unilinialized. This is useful to send the headers to the client.
+     */
+    void sendSse(std::string message);
+
+    /*! High level function to send a message to the client.
+     *
+     *  This function will format the message according to the SSE requirements.
+     *
+     *  @param eventName The event name to send.
+     *         Cannot contain newlines. Cannot be empty.
+     *  @param data The data to send. Cannot contain newlines.
+     *         This is often a json string.
+     */
+    void sendSse(std::string_view eventName, std::string_view data);
 
     bool active() const noexcept {
         return active_;
     }
 
-    void closeSse() {
-        active_ = false;
-        timer_.cancel();
-    }
+    void closeSse();
 
 private:
-    Response proceeding() override {
-        active_ = true;
-        do {
-            while(!queue_.empty()) {
-                if (!send(queue_.front())) {
-                    active_ = false;
-                    break;
-                }
-                queue_.pop();
-            }
-            if (active_) {
-                boost::system::error_code ec;
-                timer_.expires_after(std::chrono::seconds{30});
-                timer_.async_wait(getYield()[ec]);
-                if (ec && ec != boost::asio::error::operation_aborted) {
-                    active_ = false;
-                    break;
-                }
-            }
-        } while (active_);
-    }
-
-    std::optional<std::string> next() {
-        std::lock_guard lock{mutex_};
-        if (queue_.empty()) {
-            return {};
-        }
-        auto msg = std::move(queue_.front());
-        queue_.pop();
-        return msg;
-    }
+    Response proceeding() override;
+    std::optional<std::string> next();
 
     boost::asio::steady_timer timer_;
     bool active_{false};
@@ -390,7 +389,6 @@ private:
 };
 
 struct AuthReq {
-
     AuthReq(const Request& req, boost::asio::yield_context& yield)
         : req{req}, yield{yield} {}
 

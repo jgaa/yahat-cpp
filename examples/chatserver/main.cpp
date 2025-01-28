@@ -126,7 +126,7 @@ int main(int argc, char* argv[]) {
             return auth;
         }, "YahatChat"};
 
-        ChatMgr chat{chatserver.getCtx()};
+        ChatMgr chat{chatserver};
 
         chatserver.addRoute("/", make_shared<WebApp>());
         chatserver.addRoute("/chat", make_shared<ChatApi>(chat));
