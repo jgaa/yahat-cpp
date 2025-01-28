@@ -334,8 +334,8 @@ private:
     HttpServer& server_;
     struct EosData {
         std::array<char, 1> buffer;
-        std::atomic_bool ok{true};
-        boost::uuids::uuid uuid;
+        //std::atomic_bool ok{true};
+        //boost::uuids::uuid uuid;
         std::function<void()> notify_connection_closed;
     } eos_data_;
     Stream *stream_{};

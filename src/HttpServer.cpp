@@ -188,12 +188,11 @@ bool SseHandler::send(std::string_view message)
         boost::asio::mutable_buffer rbb{eos_data_.buffer.data(), eos_data_.buffer.size()};
 
         stream_->async_read_stream(rbb, [this](boost::system::error_code ec, size_t) {
-            LOG_DEBUG << "Request " << eos_data_.uuid
-                      << " - Read handler called: " << ec.message();
-            eos_data_.ok = false;
-            if (eos_data_.notify_connection_closed) {
-                eos_data_.notify_connection_closed();
-            }
+            LOG_DEBUG << "Request - Read handler called: " << ec.message();
+            //eos_data_.ok = false;
+            // if (eos_data_.notify_connection_closed) {
+            //     eos_data_.notify_connection_closed();
+            // }
         });
     }
 
@@ -531,18 +530,13 @@ void DoSession(streamT& streamPtr,
         auto curr_req = make_shared<Request>(req.base().target(), std::move(req_body), to_type(req.base().method()), &yield, isTls);
         assert(curr_req);
         auto& request = *curr_req;
+
         // copy cookies
         const auto cookies = req[http::field::cookie];
-        LOG_DEBUG << "Cookie header: " << cookies;
         for(auto c : parse_cookies(cookies)) {
             request.cookies.emplace_back(c);
         }
-        //auto cc = http::param_list(cookies);
 
-        //for(auto param : http::param_list(req[http::field::cookie])) {
-        for(auto& c : http::param_list(cookies)) {
-            request.cookies.emplace_back(c);
-        }
         Response::Compression compression = Response::Compression::NONE;
         if (req[http::field::accept_encoding].find("gzip") != std::string::npos) {
             compression = Response::Compression::GZIP;
@@ -619,6 +613,7 @@ void DoSession(streamT& streamPtr,
         if (auto cont = reply.continuation()) {
             StreamImpl stream_wrapper(stream, yield);
             cont->proceed(stream_wrapper, yield);
+            // TODO: [jgaa] Send a chunked response and let the request live?
             close = true;
         } else {
             reply.cors = instance.config().auto_handle_cors;
