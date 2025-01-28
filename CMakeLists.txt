@@ -11,7 +11,7 @@ if (YAHAT_USE_VALGRIND)
 endif()
 
 if (NOT DEFINED _VERSION)
-    set(YAHAT_VERSION 0.1.4)
+    set(YAHAT_VERSION 0.1.5)
 endif()
 add_definitions(-DYAHAT_VERSION=\"${YAHAT_VERSION}\")
 
