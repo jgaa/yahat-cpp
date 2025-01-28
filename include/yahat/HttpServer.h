@@ -6,11 +6,14 @@
 #include <string_view>
 #include <future>
 #include <span>
+#include <memory>
+#include <queue>
 
 #include <boost/asio.hpp>
 #include <boost/asio/spawn.hpp>
 #include <boost/uuid/uuid.hpp>
 #include <boost/version.hpp>
+#include <boost/beast/http.hpp>
 
 #if BOOST_VERSION >= 107500
 #   define USING_BOOST_JSON
@@ -28,6 +31,7 @@ namespace yahat {
 
 class YahatInstanceMetrics;
 class Metrics;
+class HttpServer;
 
 struct HttpConfig {
     /*! Number of threads for the API and UI.
@@ -103,7 +107,7 @@ struct Auth {
     std::any extra;
 };
 
-struct Request {
+struct Request : public std::enable_shared_from_this <Request>{
     enum class Type {
         GET,
         PUT,
@@ -118,13 +122,19 @@ struct Request {
     Request(std::string undecodedTtarget,
             std::string body,
             Type type,
-            boost::asio::yield_context *yield)
+            boost::asio::yield_context *yield,
+            bool isTls = false)
         : body{std::move(body)}
-        , type{type}, yield{yield} {
+        , type{type}, yield{yield}
+        , is_https{isTls} {
         init(undecodedTtarget);
     }
 
     void init(const std::string& undecodedTtarget);
+
+    bool isHttps() const noexcept {
+        return is_https;
+    }
 
     std::string target;
     std::string_view route; // The part of the target that was matched by the chosen route.
@@ -135,14 +145,8 @@ struct Request {
     boost::asio::yield_context *yield = {};
     std::string all_arguments;
     std::map<std::string_view, std::string_view> arguments;
-
-    /*! Send one SSE event to the client.
-     *
-     *  @param sseEvent Complete and correctly formatted SSE event.
-     *
-     *  @exception std::exception if the operation fails.
-     */
-    std::function<void(std::string_view sseEvent)> sse_send;
+    std::vector<std::pair<std::string_view, std::string_view>> cookies;
+    bool is_https{false};
 
     /*! Check if the connection is still open to the client.
      */
@@ -158,13 +162,46 @@ struct Request {
     bool expectBody() const noexcept {
         return type == Type::POST || type == Type::PUT || type == Type::PATCH;
     }
+
+    std::string_view getCookie(std::string_view name) const noexcept{
+        if (auto it = std::find_if(cookies.begin(), cookies.end(), [name](const auto& p) { return p.first == name; });
+            it != cookies.end()) {
+            return it->second;
+        }
+        return {};
+    }
+
+    std::string_view getArgument(std::string_view name) const noexcept {
+        if (auto it = arguments.find(name); it != arguments.end()) {
+            return it->second;
+        }
+        return {};
+    }
 };
+
+struct Continuation;
 
 struct Response {
     enum class Compression {
         NONE,
         GZIP
     };
+
+    Response() = default;
+    Response(int code, std::string reason)
+        : code{code}, reason{std::move(reason)} {}
+    Response(int code, std::string reason, std::string &&body)
+        : code{code}, reason{std::move(reason)}, body{std::move(body)} {}
+    Response(int code, std::string reason, std::string_view body)
+        : code{code}, reason{std::move(reason)}, body{std::string{body}} {}
+    Response(int code, std::string reason, std::string && body, std::string target)
+        : code{code}, reason{std::move(reason)}, body{std::move(body)}, target{std::move(target)} {}
+    Response(int code, std::string reason, std::string_view body, std::string target)
+        : code{code}, reason{std::move(reason)}, body{body}, target{std::move(target)} {}
+    Response(int code, std::string reason, std::string && body, std::string target, std::string_view mime_type)
+        : code{code}, reason{std::move(reason)}, body{std::move(body)}, target{std::move(target)}, mime_type{mime_type} {}
+    Response(int code, std::string reason, std::string_view body, std::string target, std::string_view mime_type)
+        : code{code}, reason{std::move(reason)}, body{body}, target{std::move(target)}, mime_type{mime_type} {}
 
     int code = 200;
     std::string reason = "OK";
@@ -176,6 +213,7 @@ struct Response {
     bool close = false;
     mutable bool cors = false;
     mutable Compression compression = Compression::NONE;
+    std::vector<std::pair<std::string, std::string>> cookies;
 
     bool ok() const noexcept {
         return code / 100 == 2;
@@ -192,10 +230,165 @@ struct Response {
         return {};
 #endif
     }
+
+    std::shared_ptr<Continuation> continuation() {
+        if (cont_) {
+            return std::move(cont_);
+        }
+        return {};
+    }
+
+    void setContinuation(std::shared_ptr<Continuation> cont) {
+        cont_ = std::move(cont);
+    }
+
+private:
+    std::shared_ptr<Continuation> cont_;
+};
+
+class Continuation {
+public:
+    class Stream {
+    public:
+        using chunk_t = decltype(boost::beast::http::make_chunk(boost::asio::const_buffer{}));
+
+        virtual ~Stream() = default;
+
+        virtual size_t async_read_stream(boost::asio::mutable_buffer buffer) = 0;
+
+        virtual void async_read_stream(boost::asio::mutable_buffer buffer,
+                                       std::function<void(const boost::system::error_code&, std::size_t)> handler) = 0;
+
+        virtual bool async_write_stream(boost::asio::const_buffer buffer) = 0;
+
+        virtual bool async_write_stream(const chunk_t& chunk) = 0;
+
+        virtual bool async_write_header(boost::beast::http::response_serializer<boost::beast::http::empty_body>& ser) = 0;
+
+        virtual void set_timeout(std::chrono::seconds timeout) = 0;
+
+        virtual void disable_timeout() = 0;
+    };
+
+
+    Continuation() = default;
+    virtual ~Continuation() = default;
+
+    virtual Response proceed(Stream& stream, boost::asio::yield_context& yield) = 0;
+};
+
+
+/*! Basic SSE handler where the app can implement the actual work-flow */
+struct SseHandler : public Continuation {
+
+    // Prevent copy and move
+    SseHandler(HttpServer& server)
+        : server_{server} {}
+
+    SseHandler(const SseHandler&) = delete;
+    SseHandler(SseHandler&&) = delete;
+    SseHandler & operator=(const SseHandler&) = delete;
+    SseHandler & operator=(SseHandler&&) = delete;
+
+
+    /*! Send function type.
+     *
+     *  Note that the send function is a stateful co-routine
+     *  an will suspend and resume as needed using the
+     *  HTTP sessions yield context.
+     */
+
+    Response proceed(Stream& stream, boost::asio::yield_context& yield) override {
+        stream_ = &stream;
+        yield_ = &yield;
+        return proceeding();
+    }
+
+protected:
+    /*! Called by the server to allow the handler to proceed with the SSE stream.
+     *
+     *  This function is called by the server after the handler has been called
+     *  and the handler has set up the send function.
+     *
+     *  The handler can now start sending messages to the client.
+     */
+    virtual Response proceeding() = 0;
+
+    // Send a sse message.
+    bool send(std::string_view message);
+
+    auto& getYield() const noexcept {
+        assert(yield_);
+        return *yield_;
+    }
+
+    auto& server() noexcept {
+        return server_;
+    }
+
+    void setOnConnectionClosed(std::function<void()> cb) {
+        eos_data_.notify_connection_closed = std::move(cb);
+    }
+
+private:
+    HttpServer& server_;
+    struct EosData {
+        std::array<char, 1> buffer;
+        //std::atomic_bool ok{true};
+        //boost::uuids::uuid uuid;
+        std::function<void()> notify_connection_closed;
+    } eos_data_;
+    Stream *stream_{};
+    boost::asio::yield_context *yield_{};
+    bool sse_initialized_{false};
+    std::optional<boost::beast::http::response_serializer<boost::beast::http::empty_body>> sse_sr_;
+};
+
+/*! SSE handler where an app can append messages to a queue to send to the client
+ *
+ *  Convenience class for handling SSE streams
+ */
+class SseQueueHandler : public SseHandler {
+public:
+    SseQueueHandler(HttpServer& server);
+
+    /*! Sends a raw SSE message.
+     *
+     *  The message must be formatted according to the SSE requirements.
+     *
+     *  An empty message will no be sent, but it will initialize the SSE connection
+     *  if it is unilinialized. This is useful to send the headers to the client.
+     */
+    void sendSse(std::string message);
+
+    /*! High level function to send a message to the client.
+     *
+     *  This function will format the message according to the SSE requirements.
+     *
+     *  @param eventName The event name to send.
+     *         Cannot contain newlines. Cannot be empty.
+     *  @param data The data to send. Cannot contain newlines.
+     *         This is often a json string.
+     */
+    void sendSse(std::string_view eventName, std::string_view data);
+
+    bool active() const noexcept {
+        return active_;
+    }
+
+    void closeSse();
+
+private:
+    Response proceeding() override;
+    std::optional<std::string> next();
+
+    boost::asio::steady_timer timer_;
+    bool active_{false};
+    std::queue<std::string> queue_;
+    std::mutex mutex_;
 };
 
 struct AuthReq {
-
     AuthReq(const Request& req, boost::asio::yield_context& yield)
         : req{req}, yield{yield} {}
 
