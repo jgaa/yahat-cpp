@@ -10,7 +10,7 @@ written micro-services or other C++ project that required a HTTP interface.
 - Can be used to implement a simple embedded HTTP server
 - Desiged to be used as an embedded API server using the HTTP protocol
 - Supports http and https
-- Native support for Server Side Events
+- Native support for Server Side Events (SSE)
 
 # Metrics
 
