@@ -14,6 +14,8 @@
 #include <vector>
 #include <type_traits>
 #include <iomanip>
+#include <cassert>
+#include <format>
 
 #include "yahat/config.h"
 
@@ -21,6 +23,7 @@
 namespace yahat {
 
 static constexpr auto cache_line_size_ = 64u; //std::hardware_destructive_interference_size;
+static constexpr bool show_metrics_timestamps = false;
 
 /*! Metrics are designed to be compatible with OpenMetrics
  *
@@ -46,18 +49,16 @@ public:
         }
 
         Scoped(const Scoped&) = delete;
-        Scoped(Scoped&& v) {
-            metric_ = v.metric_;
+        Scoped(Scoped&& v) noexcept
+            : metric_(v.metric_) {
             v.metric_ = nullptr;
         }
 
         void operator = (const Scoped&) = delete;
-        void operator = (Scoped&& v) {
-            if (metric_) {
-                metric_->dec();
-            }
+        Scoped& operator = (Scoped&& v) {
             metric_ = v.metric_;
             v.metric_ = nullptr;
+            return *this;
         }
 
         ~Scoped() {
@@ -69,6 +70,57 @@ public:
 
     private:
         T * metric_{};
+    };
+
+    template <typename metricT, typename valueT>
+    class ScopedTimer {
+    public:
+        using clock_t = std::chrono::steady_clock;
+        ScopedTimer() = delete;
+        explicit ScopedTimer(metricT* histogram)
+            : metric_{histogram}, start_time_(clock_t::now()) {}
+
+        ScopedTimer(ScopedTimer&&v)
+            : metric_{v.metric_}, start_time_{v.start_time_} {
+            metric_ = {};
+        }
+
+        ScopedTimer(const ScopedTimer&) = delete;
+
+        ScopedTimer& operator=(ScopedTimer&& v) {
+            metric_ = v.metric_;
+            start_time_ = v.start_time_;
+            v.metric_ = {};
+            return *this;
+        }
+
+        ScopedTimer& operator=(const ScopedTimer&) = delete;
+
+        ~ScopedTimer() {
+            if (metric_) {
+                auto duration = get_duration();
+                metric_->observe(duration);
+            }
+        }
+
+        valueT get_duration() const {
+            const auto end_time = clock_t::now();
+            return std::chrono::duration<valueT>(end_time - start_time_).count();
+        }
+
+        /*! Cancel the measurement.
+         *
+         *  This is useful when you start metrics automatically,
+         *  for exampe in a request handler, but want to exclude
+         *  some requests from the metrics.
+         */
+        void cancel() {
+            metric_ = {};
+        }
+
+    private:
+        metricT* metric_{};
+        clock_t::time_point start_time_;
     };
 
     using label_t = std::pair<std::string, std::string>;
@@ -165,8 +217,8 @@ public:
         }
 
     private:
-        std::atomic<T> value_{T{}};
         std::string total_name_ = makeNameWithSuffixAndLabels(name(), "total", labels());
+        alignas(cache_line_size_) std::atomic<T> value_{T{}};
     }; // Counter
 
     template <typename T = uint64_t>
@@ -206,7 +258,7 @@ public:
         }
 
     private:
-        std::atomic<T> value_{T{}};
+        alignas(cache_line_size_) std::atomic<T> value_{T{}};
     }; // Gauge
 
     class Info : public DataType {
@@ -222,6 +274,91 @@ public:
     private:
         std::string info_name_ = makeNameWithSuffixAndLabels(name(), "info", labels());
     }; // Gauge
+
+    template <typename T = double>
+    class Histogram : public DataType {
+    public:
+
+        Histogram(std::string name, std::string help, std::string unit, labels_t labels, std::vector<T> bucket_bounds)
+            : DataType(DataType::Type::Histogram, std::move(name), std::move(help), std::move(unit), std::move(labels))
+            , bucket_bounds_(std::move(bucket_bounds)), buckets_(bucket_bounds_.size() + 1, 0) {
+
+            init();
+        }
+
+        void observe(T value) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            sum_ += value;
+            count_++;
+            assert(bucket_bounds_.size() + 1 == buckets_.size());
+            for (size_t i = 0; i < bucket_bounds_.size() -1; ++i) {
+                if (value <= bucket_bounds_[i]) {
+                    buckets_[i]++;
+                    break;
+                }
+            }
+            buckets_.back()++; // The "+Inf" bucket
+        }
+
+        std::ostream& render(std::ostream& target) const override {
+            assert(!bucket_names_.empty());
+            std::vector<T> values;
+            values.reserve((bucket_names_.size()));
+            {
+                // Copy the values so we don't hold the lock while doing slow formatting...
+                std::lock_guard<std::mutex> lock(mutex_);
+                values = buckets_;
+                values.emplace_back(count_);
+                values.emplace_back(sum_);
+            }
+
+            // First rows are the buckets. Then the bucket +Inf, then count and finally sum.
+            const auto inf_row = values.size() - 3;
+            const auto count_row = values.size() - 2;
+
+            for (auto row = 0u; row < values.size(); ++row) {
+                target << bucket_names_[row]  << ' ';
+                if (row == inf_row || row == count_row) {
+                    target << std::format("{} ", static_cast<uint64_t>(values[row]));
+                } else {
+                    renderNumber(target, values[row]) << ' ';
+                }
+                renderCreated(target, true);
+            }
+
+            return target;
+        }
+
+        auto scoped() {
+            return ScopedTimer<Histogram, T>(this);
+        }
+
+    private:
+        void init() {
+            for(const auto &bound : bucket_bounds_) {
+                auto xlabels = labels();
+                xlabels.emplace_back("le", std::format("{:g}",bound));
+                bucket_names_.emplace_back(makeNameWithSuffixAndLabels(name(), "bucket", xlabels));
+            };
+
+            {
+                auto xlabels = labels();
+                xlabels.emplace_back("le", "+Inf");
+                bucket_names_.emplace_back(makeNameWithSuffixAndLabels(name(), "bucket", xlabels));
+            }
+
+            bucket_names_.emplace_back(makeNameWithSuffixAndLabels(name(), "count", labels()));
+            bucket_names_.emplace_back(makeNameWithSuffixAndLabels(name(), "sum", labels()));
+        }
+
+        T sum_;
+        uint64_t count_;
+        std::vector<T> bucket_bounds_;
+        std::vector<T> buckets_;
+        std::vector<std::string> bucket_names_;
+        alignas(cache_line_size_) mutable std::mutex mutex_;
+    };
+
 
     Metrics();
     ~Metrics() = default;
@@ -241,9 +378,14 @@ public:
         return AddMetric<Info>(std::move(name), std::move(help), std::move(unit), std::move(labels));
     }
 
-    template<typename T>
-    T *AddMetric(std::string name, std::string help, std::string unit = {}, labels_t labels = {}) {
-        auto c = std::make_unique<T>(std::move(name), std::move(help), std::move(unit), std::move(labels));
+    template<typename T = uint64_t>
+    Histogram<T> *AddHistogram(std::string name, std::string help, std::string unit, labels_t labels, std::vector<T> bucket_bounds) {
+        return AddMetric<Histogram<T>>(std::move(name), std::move(help), std::move(unit), std::move(labels), bucket_bounds);
+    }
+
+    template<typename T, typename ...argsT>
+    T *AddMetric(std::string name, std::string help, std::string unit = {}, labels_t labels = {}, argsT&&... args) {
+        auto c = std::make_unique<T>(std::move(name), std::move(help), std::move(unit), std::move(labels), std::forward<argsT>(args)...);
         auto * ptr = c.get();
         std::lock_guard lock(mutex_);
         auto key = DataType::makeKey(c->name(), c->labels(), c->type());

@@ -161,6 +161,23 @@ ostream& operator << (ostream& o, const yahat::Request::Type& t) {
 
 namespace yahat {
 
+#ifdef YAHAT_ENABLE_METRICS
+void RequestHandler::enableMetrics(HttpServer& server, std::string_view target)
+{
+    Metrics::labels_t labels;
+    labels.emplace_back("target", target);
+    std::vector<double> bb = {0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 1.0, 3.0};
+
+    metrics_ = server.internalMetrics()->metrics().AddHistogram(
+        "http_request_duration",
+        "The duration of HTTP requests",
+        "sec",
+        labels,
+        bb);
+}
+#endif
+
+
 bool SseHandler::send(std::string_view message)
 {
     //stream_->set_timeout(std::chrono::seconds(server().config().http_io_timeout));
@@ -932,6 +949,10 @@ Response HttpServer::onRequest(Request &req) noexcept
             auto * metrics = this->internalMetrics();
             if (metrics) {
                 metrics->incrementHttpRequestCount(best_route, toString(req.type));
+            }
+
+            if (auto *hist = best_handler->metrics()) {
+                req.requestDuration = hist->scoped();
             }
 #endif
             return best_handler->onReqest(req);

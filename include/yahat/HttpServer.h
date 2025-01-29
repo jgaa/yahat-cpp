@@ -27,6 +27,10 @@
 
 #include "yahat/config.h"
 
+#ifdef YAHAT_ENABLE_METRICS
+#   include "yahat/Metrics.h"
+#endif
+
 namespace yahat {
 
 class YahatInstanceMetrics;
@@ -177,6 +181,10 @@ struct Request : public std::enable_shared_from_this <Request>{
         }
         return {};
     }
+
+#ifdef YAHAT_ENABLE_METRICS
+    mutable std::optional<Metrics::ScopedTimer<Metrics::Histogram<double>, double>> requestDuration;
+#endif
 };
 
 struct Continuation;
@@ -423,6 +431,24 @@ public:
      *          or a shortcut to exit further processing in the handler.
      */
     virtual Response onReqest(const Request& req) = 0;
+
+#ifdef YAHAT_ENABLE_METRICS
+    /*! Enable metrics for this handler
+     *
+     *  When enabled, the server will produce metrics for al requests from this handler.
+     *
+     *  @param target The target for the handler. This is used as a label for the metrics.
+     */
+    void enableMetrics(HttpServer& server, std::string_view target);
+
+    /*! Used by the server to handle the metrics */
+    auto *metrics() noexcept {
+        return metrics_;
+    }
+
+private:
+    Metrics::Histogram<double> * metrics_{};
+#endif
 };
 
 template <typename T>

@@ -27,7 +27,7 @@ Supported metrics types:
 - [x] Counter
 - [x] Gauge
 - [x] Info
-- [ ] Histogram
+- [x] Histogram
 - [ ] Summary
 - [ ] Stateset
 - [ ] Untyped

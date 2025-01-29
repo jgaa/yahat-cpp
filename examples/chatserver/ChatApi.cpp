@@ -47,6 +47,8 @@ ChatApi::ChatApi(ChatMgr &chatMgr)
             };
         });
     });
+
+    enableMetrics(chatMgr.server(), "/chat");
 }
 
 yahat::Response ChatApi::onReqest(const yahat::Request &req)
@@ -137,6 +139,12 @@ yahat::Response ChatApi::onReqest(const yahat::Request &req)
 
         Response response{200, "OK"};
         response.setContinuation(std::move(sse));
+#ifdef YAHAT_ENABLE_METRICS
+        if (req.requestDuration) {
+            // We don't want long-running SSE requests to affect the metrics for normal requests.
+            req.requestDuration->cancel();
+        }
+#endif
         return response;
     } else if (req.type == Request::Type::GET && req.target == "/chat/users") {
         auto users = chat_mgr_.listUsers();
