@@ -1,33 +1,33 @@
-project(unittests LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.14)
+project(SummaryTests)
+
+# Enable testing framework
+enable_testing()
+
+# Find GoogleTest
+find_package(GTest REQUIRED)
+
+# Add test executable
+add_executable(summary_tests summary_tests.cpp)
+
+# Link GoogleTest libraries
+target_link_libraries(summary_tests PRIVATE GTest::GTest GTest::Main yahat)
+
+# Include directories
+include_directories(${GTEST_INCLUDE_DIRS})
+
+# Add the test to CMake's test suite
+add_test(NAME SummaryTest COMMAND summary_tests)
 
 
-####### metrics_tests
-if (YAHAT_ENABLE_METRICS)
+# Add test executable
+add_executable(histogram_tests histogram_tests.cpp)
 
-add_executable(metrics_tests
-    metrics_tests.cpp
-    )
+# Link GoogleTest libraries
+target_link_libraries(histogram_tests PRIVATE GTest::GTest GTest::Main yahat)
 
-#set_property(TARGET metrics_tests PROPERTY CXX_STANDARD 20)
+# Include directories
+include_directories(${GTEST_INCLUDE_DIRS})
 
-add_dependencies(metrics_tests
-    yahat
-    ${DEPENDS_GTEST}
-    )
-
-target_include_directories(metrics_tests
-    PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}
-    $<BUILD_INTERFACE:${NSBLAST_ROOT}/include
-    $<BUILD_INTERFACE:${NSBLAST_ROOT}/src/lib
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-    )
-
-target_link_libraries(metrics_tests
-    ${GTEST_LIBRARIES}
-    yahat
-)
-
-add_test(NAME metrics_tests COMMAND metrics_tests)
-
-endif()
+# Add the test to CMake's test suite
+add_test(NAME HistogramTest COMMAND histogram_tests)
