@@ -29,7 +29,7 @@ TEST_F(StatesetTest, SetStateByIndex) {
 }
 
 TEST_F(StatesetTest, SetStateByEnum) {
-    enum State { starting = 0, running = 1, stopped = 2 };
+    enum class State { starting = 0, running = 1, stopped = 2 };
     stateset->setState(State::running, true);
     EXPECT_FALSE(stateset->getState(State::starting));
     EXPECT_TRUE(stateset->getState(State::running));
