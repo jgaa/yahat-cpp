@@ -131,7 +131,11 @@ ostream& Metrics::DataType::renderNumber(std::ostream &target, double value, uin
         // If it's an integer, print with at least 1 decimal
         target << std::fixed << std::setprecision(1) << value;
     } else {
-        target << std::format("{:.{}g}", value, maxDecimals);
+        if (value < 0.001) {
+            target << std::format("{:.{}f}", value, maxDecimals);  // Force fixed for small values
+        } else {
+            target << std::format("{:.{}g}", value, maxDecimals);  // Use general format otherwise
+        }
     }
 
     return target;

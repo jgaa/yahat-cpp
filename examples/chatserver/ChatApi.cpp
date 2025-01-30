@@ -48,7 +48,19 @@ ChatApi::ChatApi(ChatMgr &chatMgr)
         });
     });
 
+#ifdef YAHAT_ENABLE_METRICS
     enableMetrics(chatMgr.server(), "/chat");
+
+    yahat::Metrics::labels_t labels{{"api", "chat"}};
+    std::vector<double> quantiles = {0.5, 0.9, 0.99};
+
+    req_duration_metric_ = chatMgr.server().metrics()->AddSummary(
+        "yahat_chat_messages",
+        "Duration distribution for handling chat messages",
+        "sec",
+        labels,
+        quantiles);
+#endif
 }
 
 yahat::Response ChatApi::onReqest(const yahat::Request &req)
@@ -97,6 +109,9 @@ yahat::Response ChatApi::onReqest(const yahat::Request &req)
             return {400, "Excpected JSON payload with the message!"};
         }
 
+#ifdef YAHAT_ENABLE_METRICS
+        auto metric = req_duration_metric_->scoped();
+#endif
         if (auto message = json->at("message").as_string(); !message.empty()) {
             if (!user_name.empty()) {
                 chat_mgr_.sendMessage(user_name, message);

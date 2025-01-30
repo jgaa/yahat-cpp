@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(SummaryTests)
+project(UnitTests)
 
 # Enable testing framework
 enable_testing()
@@ -7,27 +7,19 @@ enable_testing()
 # Find GoogleTest
 find_package(GTest REQUIRED)
 
-# Add test executable
-add_executable(summary_tests summary_tests.cpp)
+# Macro to simplify test addition
+macro(AddTest CLASS_NAME BASE_NAME)
+    add_executable(${BASE_NAME}_tests ${BASE_NAME}.cpp)
+    target_link_libraries(${BASE_NAME}_tests PRIVATE GTest::GTest GTest::Main yahat)
+    include_directories(${GTEST_INCLUDE_DIRS})
+    add_test(NAME ${CLASS_NAME}Test COMMAND ${BASE_NAME}_tests)
+endmacro()
 
-# Link GoogleTest libraries
-target_link_libraries(summary_tests PRIVATE GTest::GTest GTest::Main yahat)
-
-# Include directories
-include_directories(${GTEST_INCLUDE_DIRS})
-
-# Add the test to CMake's test suite
-add_test(NAME SummaryTest COMMAND summary_tests)
-
-
-# Add test executable
-add_executable(histogram_tests histogram_tests.cpp)
-
-# Link GoogleTest libraries
-target_link_libraries(histogram_tests PRIVATE GTest::GTest GTest::Main yahat)
-
-# Include directories
-include_directories(${GTEST_INCLUDE_DIRS})
-
-# Add the test to CMake's test suite
-add_test(NAME HistogramTest COMMAND histogram_tests)
+if (YAHAT_ENABLE_METRICS)
+    AddTest(Summary summary_tests)
+    AddTest(Histogram histogram_tests)
+    AddTest(Stateset stateset_tests)
+    AddTest(Counter counter_tests)
+    AddTest(Gauge gauge_tests)
+    AddTest(Info info_tests)
+endif()
