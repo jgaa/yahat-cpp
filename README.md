@@ -1,6 +1,7 @@
-[![Build Status - Ubuntu](https://github.com/jgaa/yahat-cpp/actions/workflows/ubuntu_build.yaml/badge.svg)](https://github.com/jgaa/yahat-cpp/actions/workflows/ubuntu_build.yaml)
-[![Build Status - macOS](https://github.com/jgaa/yahat-cpp/actions/workflows/macos_build.yaml/badge.svg)](https://github.com/jgaa/yahat-cpp/actions/workflows/macos_build.yaml)
-[![Build Status - Windows](https://github.com/jgaa/yahat-cpp/actions/workflows/windows_build.yaml/badge.svg)](https://github.com/jgaa/yahat-cpp/actions/workflows/windows_build.yaml)
+[![Build Status - Ubuntu](https://github.com/jgaa/yahat-cpp/actions/workflows/ubuntu_build.yaml/badge.svg?label=Ubuntu%20Build)](https://github.com/jgaa/yahat-cpp/actions/workflows/ubuntu_build.yaml)
+[![Build Status - macOS](https://github.com/jgaa/yahat-cpp/actions/workflows/macos_build.yaml/badge.svg?label=macOS%20Build)](https://github.com/jgaa/yahat-cpp/actions/workflows/macos_build.yaml)
+[![Build Status - Windows](https://github.com/jgaa/yahat-cpp/actions/workflows/windows_build.yaml/badge.svg?label=Windows%20Build)](https://github.com/jgaa/yahat-cpp/actions/workflows/windows_build.yaml)
+
 
 # yahat-cpp
 Yet Another HTTP API Thing - A trivial HTTP server for simple REST APIs and other HTTP interfaces in C++ projects.
