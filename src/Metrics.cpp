@@ -80,7 +80,12 @@ ostream &Metrics::DataType::renderCreated(std::ostream &target, bool postfix) co
     if (!postfix) {
         target << created_name_ << ' ';
     }
-    return target << chrono::system_clock::to_time_t(updated()) << '\n';
+
+    if constexpr (show_metrics_timestamps) {
+        return target << chrono::system_clock::to_time_t(updated()) << '\n';
+    } else {
+        return target << '\n';
+    }
 }
 
 string Metrics::DataType::makeKey(const std::string &name, const labels_t &labels, std::optional<DataType::Type> type)
@@ -126,18 +131,11 @@ ostream& Metrics::DataType::renderNumber(std::ostream &target, double value, uin
         // If it's an integer, print with at least 1 decimal
         target << std::fixed << std::setprecision(1) << value;
     } else {
-        // Count the number of significant decimal places
-        int precision = 1;
-        double fractionalPart = value - std::floor(value);
-        while (std::fabs(fractionalPart) > std::pow(10, -precision) && precision < 15) {
-            if (precision >= maxDecimals) {
-                break;
-            }
-            ++precision;
+        if (value < 0.001) {
+            target << std::format("{:.{}f}", value, maxDecimals);  // Force fixed for small values
+        } else {
+            target << std::format("{:.{}g}", value, maxDecimals);  // Use general format otherwise
         }
-
-        // Print the number with the calculated precision
-        target << std::fixed << std::setprecision(precision) << value;
     }
 
     return target;

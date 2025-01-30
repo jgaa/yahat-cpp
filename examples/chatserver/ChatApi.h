@@ -9,6 +9,7 @@
 #include <map>
 
 #include "yahat/HttpServer.h"
+#include "yahat/Metrics.h"
 
 class ChatMgr;
 
@@ -116,5 +117,8 @@ private:
 
     ChatMgr& chat_mgr_; ///< Reference to the ChatMgr instance for managing chat rooms.
     std::map<boost::uuids::uuid, User> users_; ///< Map of users indexed by their UUIDs.
-    std::mutex mutex_; ///< Mutex to ensure thread-safe access to the users map.
+#ifdef YAHAT_ENABLE_METRICS
+    yahat::Metrics::Summary<double> *req_duration_metric_{}; ///< Pointer to the request duration metric.
+#endif
+    alignas(64u) std::mutex mutex_; ///< Mutex to ensure thread-safe access to the users map.
 };

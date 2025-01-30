@@ -135,7 +135,7 @@ int main(int argc, char* argv[]) {
             Auth auth;
             LOG_DEBUG << "Authenticating - auth header: " << ar.auth_header;
             auth.access = true;
-            auth.extra = "nobody";
+            auth.extra = "nobody"s;
             return auth;
         }, "apiserver-example"};
 

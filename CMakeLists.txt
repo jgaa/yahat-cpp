@@ -11,7 +11,7 @@ if (YAHAT_USE_VALGRIND)
 endif()
 
 if (NOT DEFINED _VERSION)
-    set(YAHAT_VERSION 0.1.5)
+    set(YAHAT_VERSION 0.2.0)
 endif()
 add_definitions(-DYAHAT_VERSION=\"${YAHAT_VERSION}\")
 
@@ -32,10 +32,6 @@ include(GNUInstallDirs)
 
 if(NOT DEFINED USE_BOOST_VERSION)
     set(USE_BOOST_VERSION 1.81)
-endif()
-
-if (YAHAT_WITH_TESTS)
-    find_package(GTest REQUIRED)
 endif()
 
 # https://cmake.org/cmake/help/latest/policy/CMP0167.html

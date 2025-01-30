@@ -1,33 +1,25 @@
-project(unittests LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.14)
+project(UnitTests)
 
+# Enable testing framework
+enable_testing()
 
-####### metrics_tests
+# Find GoogleTest
+find_package(GTest REQUIRED)
+
+# Macro to simplify test addition
+macro(AddTest CLASS_NAME BASE_NAME)
+    add_executable(${BASE_NAME}_tests ${BASE_NAME}.cpp)
+    target_link_libraries(${BASE_NAME}_tests PRIVATE GTest::GTest GTest::Main yahat)
+    include_directories(${GTEST_INCLUDE_DIRS})
+    add_test(NAME ${CLASS_NAME}Test COMMAND ${BASE_NAME}_tests)
+endmacro()
+
 if (YAHAT_ENABLE_METRICS)
-
-add_executable(metrics_tests
-    metrics_tests.cpp
-    )
-
-#set_property(TARGET metrics_tests PROPERTY CXX_STANDARD 20)
-
-add_dependencies(metrics_tests
-    yahat
-    ${DEPENDS_GTEST}
-    )
-
-target_include_directories(metrics_tests
-    PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}
-    $<BUILD_INTERFACE:${NSBLAST_ROOT}/include
-    $<BUILD_INTERFACE:${NSBLAST_ROOT}/src/lib
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-    )
-
-target_link_libraries(metrics_tests
-    ${GTEST_LIBRARIES}
-    yahat
-)
-
-add_test(NAME metrics_tests COMMAND metrics_tests)
-
+    AddTest(Summary summary_tests)
+    AddTest(Histogram histogram_tests)
+    AddTest(Stateset stateset_tests)
+    AddTest(Counter counter_tests)
+    AddTest(Gauge gauge_tests)
+    AddTest(Info info_tests)
 endif()
