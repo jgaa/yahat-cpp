@@ -37,6 +37,9 @@ namespace yahat {
 static constexpr auto cache_line_size_ = 64u; //std::hardware_destructive_interference_size;
 static constexpr bool show_metrics_timestamps = false;
 
+template <typename T>
+concept EnumType = std::is_enum_v<T>;
+
 /**
  * @class Metrics
  * @brief A collection of metrics for OpenMetrics-based monitoring.
@@ -652,6 +655,20 @@ public:
         }
 
         /**
+         * @brief Sets the state using an enumeration value.
+         *
+         * Marks the state at the given index as either active or inactive.
+         *
+         * @tparam T The enumeration type used for the state index.
+         * @param index The index of the state to update.
+         * @param active Boolean indicating whether the state should be active.
+         */
+        template <EnumType T>
+        void setState(T index, bool active) {
+            setState(static_cast<size_t>(index), active);
+        }
+
+        /**
          * @brief Sets one state as active and deactivates all others.
          *
          * This is useful for mutually exclusive states, such as operational statuses.
@@ -667,6 +684,19 @@ public:
             for (size_t i = 0; i < states_.size(); ++i) {
                 state_values_[i] = (i == index) ? 1 : 0;
             }
+        }
+
+        /**
+         * @brief Sets one state as active and deactivates all others.
+         *
+         * This is useful for mutually exclusive states, such as operational statuses.
+         *
+         * @tparam T The enumeration type used for the state index.
+         * @param index The index of the state to activate.
+         */
+        template <EnumType T>
+        void setExclusiveState(T index) {
+            setExclusiveState(static_cast<size_t>(index));
         }
 
         /**

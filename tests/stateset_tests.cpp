@@ -28,6 +28,14 @@ TEST_F(StatesetTest, SetStateByIndex) {
     EXPECT_FALSE(stateset->getState(2));
 }
 
+TEST_F(StatesetTest, SetStateByEnum) {
+    enum State { starting = 0, running = 1, stopped = 2 };
+    stateset->setState(State::running, true);
+    EXPECT_FALSE(stateset->getState(State::starting));
+    EXPECT_TRUE(stateset->getState(State::running));
+    EXPECT_FALSE(stateset->getState(State::stopped));
+}
+
 TEST_F(StatesetTest, SetStateByName) {
     stateset->setState("running", true);
     EXPECT_FALSE(stateset->getState("starting"));
@@ -40,6 +48,14 @@ TEST_F(StatesetTest, SetExclusiveState) {
     EXPECT_FALSE(stateset->getState(0));
     EXPECT_FALSE(stateset->getState(1));
     EXPECT_TRUE(stateset->getState(2));
+}
+
+TEST_F(StatesetTest, SetExclusiveStateWithEnum) {
+    enum State { starting = 0, running = 1, stopped = 2 };
+    stateset->setExclusiveState(State::stopped);
+    EXPECT_FALSE(stateset->getState(State::starting));
+    EXPECT_FALSE(stateset->getState(State::running));
+    EXPECT_TRUE(stateset->getState(State::stopped));
 }
 
 TEST_F(StatesetTest, InvalidStateName) {
