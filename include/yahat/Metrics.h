@@ -26,6 +26,7 @@
 #include <cassert>
 #include <format>
 #include <cmath>
+#include <array>
 
 #include <boost/circular_buffer.hpp>
 
@@ -51,7 +52,7 @@ class Metrics
 {
 
 public:
-
+    using uint = unsigned int;
     /**
      * @class Scoped
      * @brief RAII-based helper class for incrementing and decrementing metrics.
@@ -433,13 +434,13 @@ public:
     private:
         void init() {
             for(const auto &bound : bucket_bounds_) {
-                auto xlabels = labels();
+                labels_t xlabels = labels();
                 xlabels.emplace_back("le", std::format("{:g}",bound));
                 bucket_names_.emplace_back(makeNameWithSuffixAndLabels(name(), "bucket", xlabels));
             };
 
             {
-                auto xlabels = labels();
+                labels_t xlabels = labels();
                 xlabels.emplace_back("le", "+Inf");
                 bucket_names_.emplace_back(makeNameWithSuffixAndLabels(name(), "bucket", xlabels));
             }
@@ -448,8 +449,8 @@ public:
             bucket_names_.emplace_back(makeNameWithSuffixAndLabels(name(), "sum", labels()));
         }
 
-        T sum_;
-        uint64_t count_;
+        T sum_{};
+        uint64_t count_{};
         std::vector<T> bucket_bounds_;
         std::vector<T> buckets_;
         std::vector<std::string> bucket_names_;
@@ -567,7 +568,7 @@ public:
     private:
         void init() {
             for (const auto &quantile : quantiles_) {
-                auto xlabels = labels();
+                labels_t xlabels = labels();
                 xlabels.emplace_back("quantile", std::format("{:g}", quantile));
                 summary_names_.emplace_back(makeNameWithSuffixAndLabels(name(), "", xlabels));
             }
@@ -576,8 +577,8 @@ public:
             summary_names_.emplace_back(makeNameWithSuffixAndLabels(name(), "sum", labels()));
         }
 
-        T sum_ = 0;
-        uint64_t count_ = 0;
+        T sum_{};
+        uint64_t count_{};
         std::vector<T> quantiles_;
         boost::circular_buffer<T> observations_;  // Replaces std::vector for efficient ring buffer
         std::vector<std::string> summary_names_;
@@ -756,7 +757,7 @@ public:
         void init() {
             assert(states_.size() <= MaxCapacity);
             for (size_t i = 0; i < states_.size(); ++i) {
-                auto xlabels = labels();
+                labels_t xlabels = labels();
                 xlabels.emplace_back("state", states_[i]);
                 state_names_.emplace_back(makeNameWithSuffixAndLabels(name(), "stateset", xlabels));
                 state_index_[states_[i]] = i;
@@ -1003,7 +1004,6 @@ private:
     static std::optional<std::chrono::system_clock::time_point> now_; // Fot unit tests
 
     alignas(cache_line_size_) std::mutex mutex_;
-    std::array<char, cache_line_size_ - sizeof(std::mutex)> mpadding_{};
 };
 
 } // ns

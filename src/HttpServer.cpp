@@ -282,7 +282,7 @@ std::optional<string> SseQueueHandler::next() {
     if (queue_.empty()) {
         return {};
     }
-    auto msg = std::move(queue_.front());
+    string msg = std::move(queue_.front());
     queue_.pop();
     return msg;
 }
@@ -353,11 +353,6 @@ private:
     T& stream_;
     boost::asio::yield_context& yield_;
 };
-
-string generateUuid() {
-    static boost::uuids::random_generator uuid_gen_;
-    return boost::uuids::to_string(uuid_gen_());
-}
 
 struct LogRequest {
     LogRequest() = delete;
@@ -733,7 +728,7 @@ std::future<void> HttpServer::start()
 
     const bool is_tls = !config_.http_tls_key.empty();
 
-    auto port = config_.http_port;
+    string port = config_.http_port;
     if (port.empty()) {
         if (is_tls) {
             port = "https";
@@ -1034,7 +1029,7 @@ std::filesystem::path HttpServer::FileHandler::resolve(std::string_view target)
         throw runtime_error{"Invalid target. Normalized target cannot start with slash!"};
     }
 
-    auto raw = root_;
+    filesystem::path raw = root_;
 
     if (!target.empty()) {
         raw /= t;
@@ -1081,7 +1076,7 @@ Response HttpServer::FileHandler::readFile(const std::filesystem::path &path)
 
 Response HttpServer::FileHandler::handleDir(const std::filesystem::path &path)
 {
-    auto index = path;
+    filesystem::path index = path;
     index /= "index.html";
     if (filesystem::is_regular_file(index)) {
         return readFile(index);

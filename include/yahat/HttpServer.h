@@ -31,7 +31,26 @@
 #   include "yahat/Metrics.h"
 #endif
 
+// Usual noise to compile under Windows
+#ifdef min
+#   undef min
+#endif
+#ifdef max
+#   undef max
+#endif
+#ifdef DELETE
+#   undef DELETE
+#endif
+#ifdef ERROR
+#   undef ERROR
+#endif
+#ifdef DEBUG
+#   undef DEBUG
+#endif
+
 namespace yahat {
+
+using uint = unsigned int;
 
 class YahatInstanceMetrics;
 class Metrics;
@@ -187,7 +206,7 @@ struct Request : public std::enable_shared_from_this <Request>{
 #endif
 };
 
-struct Continuation;
+class Continuation;
 
 struct Response {
     enum class Compression {

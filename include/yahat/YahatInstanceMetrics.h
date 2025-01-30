@@ -62,7 +62,6 @@ private:
     std::map<std::string, counter_t *> http_requests_; // Count of requests per route
 
     alignas(cache_line_size_) std::mutex mutex_;
-    char mpadding_[cache_line_size_ - sizeof(std::mutex)];
 };
 
 }

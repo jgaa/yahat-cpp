@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
 
-option(YAHAT_WITH_TESTS "Compile tests" OFF)
+option(YAHAT_WITH_TESTS "Compile tests" ON)
 option(YAHAT_WITH_EXAMPLES "Compile examples" ON)
 option(USE_LOGFAULT "Use logfault" OFF)
 option(YAHAT_USE_VALGRIND "Enable Valgrind" OFF)
@@ -80,6 +80,11 @@ target_link_libraries(${PROJECT_NAME}
         ${ZLIB_LIBRARIES}
         ${CMAKE_THREAD_LIBS_INIT}
 )
+
+# Add /bigobj option for MSVC compiler
+if (MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE /bigobj)
+endif()
 
 
 if (USE_LOGFAULT)
