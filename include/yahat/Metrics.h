@@ -731,6 +731,18 @@ public:
             return state_values_[index] == 1;
         }
 
+        /**
+         * @brief Retrieves the activation status of a state by enumeration value.
+         *
+         * @tparam T The enumeration type used for the state index.
+         * @param index The index of the state to query.
+         * @return `true` if the state is active, `false` otherwise.
+         */
+        template <EnumType T>
+        bool getState(T index) const {
+            return getState(static_cast<size_t>(index));
+        }
+
         std::ostream& render(std::ostream& target) const override {
             std::lock_guard<std::mutex> lock(mutex_);
             for (size_t i = 0; i < states_.size(); ++i) {
