@@ -18,7 +18,6 @@
 #include <boost/beast/version.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <boost/uuid/random_generator.hpp>
-#include <boost/scope_exit.hpp>
 
 #include "yahat/logging.h"
 #include "yahat/HttpServer.h"
@@ -851,9 +850,9 @@ void HttpServer::run()
 {
     LOG_DEBUG << "Starting the HTTP server...";
 
-    BOOST_SCOPE_EXIT(void) {
+    ScopedExit when_done{[this] {
         LOG_DEBUG << "The HTTP server is done.";
-    } BOOST_SCOPE_EXIT_END
+    }};
 
     auto future = start();
     future.get();

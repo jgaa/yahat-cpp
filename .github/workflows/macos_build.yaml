@@ -1,0 +1,31 @@
+name: CMake Build and Test (macOS)
+
+on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install cmake boost openssl zlib googletest
+
+      - name: Configure CMake
+        run: cmake -DYAHAT_WITH_TESTS=ON -DYAHAT_WITH_EXAMPLES=ON -DYAHAT_ENABLE_METRICS=ON -S . -B build
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run tests
+        run: ctest --test-dir build

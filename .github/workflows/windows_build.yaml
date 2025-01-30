@@ -1,0 +1,75 @@
+name: CMake Build and Test (Windows)
+
+on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install dependencies with choco
+        run: |
+          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y --limit-output
+
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          ./vcpkg/bootstrap-vcpkg.bat
+
+      - name: Cache vcpkg
+        id: cache-vcpkg
+        uses: actions/cache@v3
+        with:
+          path: vcpkg/installed
+          key: ${{ runner.os }}-vcpkg-boost-slim
+
+      - name: Install dependencies with vcpkg
+        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+        run: |
+          ./vcpkg/vcpkg.exe install \
+            zlib:x64-windows \
+            openssl:x64-windows \
+            gtest:x64-windows \
+            boost-system:x64-windows \
+            boost-program-options:x64-windows \
+            boost-coroutine:x64-windows \
+            boost-context:x64-windows \
+            boost-chrono:x64-windows \
+            boost-json:x64-windows \
+            boost-url:x64-windows \
+            boost-asio:x64-windows \
+            boost-beast:x64-windows \
+            boost-circular-buffer:x64-windows \
+            boost-uuid:x64-windows
+
+      - name: Configure CMake
+        run: |
+          cmake \
+            -G "Visual Studio 17 2022" \
+            -A x64 \
+            -D_WIN32_WINNT=0x0A00 \
+            -DYAHAT_WITH_TESTS=ON \
+            -DYAHAT_WITH_EXAMPLES=ON \
+            -DYAHAT_ENABLE_METRICS=ON \
+            -DCMAKE_TOOLCHAIN_FILE=./vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -S . \
+            -B build
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run tests
+        run: ctest -C Release --test-dir build

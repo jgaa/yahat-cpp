@@ -1,3 +1,7 @@
+[![Build Status - Ubuntu](https://github.com/jgaa/yahat-cpp/actions/workflows/ubuntu_build.yaml/badge.svg)](https://github.com/jgaa/yahat-cpp/actions/workflows/ubuntu_build.yaml)
+[![Build Status - macOS](https://github.com/jgaa/yahat-cpp/actions/workflows/macos_build.yaml/badge.svg)](https://github.com/jgaa/yahat-cpp/actions/workflows/macos_build.yaml)
+[![Build Status - Windows](https://github.com/jgaa/yahat-cpp/actions/workflows/windows_build.yaml/badge.svg)](https://github.com/jgaa/yahat-cpp/actions/workflows/windows_build.yaml)
+
 # yahat-cpp
 Yet Another HTTP API Thing - A trivial HTTP server for simple REST APIs and other HTTP interfaces in C++ projects.
 
@@ -41,9 +45,18 @@ You can derive your own metrics class from `yahat::Metrics::DataType` and
 add it to the metrics by calling `Metrics::AddUntyped<YourClass>()`.
 
 # Platforms
-Currently tested only on Linux. Uses `boost.asio` and `boost.beast`.
 
-Uses C++20.
+- Linux (Tested on Ubuntu)
+- MacOS
+- Windows
+
+# Requirements
+
+- C++20.
+- Boost 1.82 or later
+- zlib
+- openssl
+- gtest (if testing is enabled with CMake option `YAHAT_WITH_TESTS`)
 
 # Yahat Chat
 This is a simple chat server that uses HTTP *Server-Sent Events* (SSE) to 

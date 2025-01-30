@@ -1,0 +1,32 @@
+name: CMake Build and Test (Ubuntu)
+
+on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libboost-all-dev libssl-dev zlib1g-dev libgtest-dev
+
+      - name: Configure CMake
+        run: cmake -DYAHAT_WITH_TESTS=ON -DYAHAT_WITH_EXAMPLES=ON -DYAHAT_ENABLE_METRICS=ON -S . -B build
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run tests
+        run: ctest --test-dir build
+    

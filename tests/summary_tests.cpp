@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 #include "yahat/Metrics.h"  // Ensure this includes the Summary class
 
+#include <thread>
+#include <chrono>
+
 using namespace yahat;
 
 class SummaryTest : public ::testing::Test {

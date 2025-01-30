@@ -47,6 +47,9 @@ public:
      * @brief Represents a user connected to the chat system.
      */
     struct User {
+        explicit User(const std::string& name) : name(name) {}
+        User() = default;
+
         std::string name; ///< The name of the user.
         std::weak_ptr<SseHandler> sse_; ///< Weak pointer to the user's SSE handler.
     };

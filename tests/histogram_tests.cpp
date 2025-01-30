@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 #include "yahat/Metrics.h"  // Ensure this includes the Histogram class
 
+#include <thread>
+#include <chrono>
+
 using namespace yahat;
 
 class HistogramTest : public ::testing::Test {
