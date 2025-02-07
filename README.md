@@ -72,5 +72,13 @@ The chat *app* running in the web browser uses JavaScript. However, it is kept t
 absolute minimum, and it does not use any JavaScript libraries or external resources. 
 It use only the app's own `index.html` file. 
 
+If can run docker containers on your machine, there is an official docker image available for yahatchat. 
+
+You can run it locally on port 8000 with this command. Since we are binding to `0.0.0.0`, it will be abailable for all the machines on your local network. If you just want to test it locally, use `127.0.0.1` instead.
+
+```sh
+docker run --rm -it -d --name yahatchat -p 0.0.0.0:8000:8080 ghcr.io/jgaa/yahatchat
+```
+
 # Status
 Beta
