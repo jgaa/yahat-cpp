@@ -652,6 +652,7 @@ public:
                 throw std::out_of_range("Invalid state index");
             }
             std::lock_guard<std::mutex> lock(mutex_);
+            assert(index < MaxCapacity);
             state_values_[index] = active ? 1 : 0;
         }
 

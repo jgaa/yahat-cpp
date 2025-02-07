@@ -5,6 +5,7 @@ option(YAHAT_WITH_EXAMPLES "Compile examples" ON)
 option(USE_LOGFAULT "Use logfault" OFF)
 option(YAHAT_USE_VALGRIND "Enable Valgrind" OFF)
 option(YAHAT_ENABLE_METRICS "Enable Metrics (OpenMetrics compatible)" ON)
+option(YAHAT_STATIC_BOOST "Statically link boost" OFF)
 
 if (YAHAT_USE_VALGRIND)
    set (VALDGRIND_ARGS -DBOOST_USE_VALGRIND=1)
@@ -38,6 +39,12 @@ endif()
 # Disable warning
 if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.30.0")
     cmake_policy(SET CMP0167 OLD)
+endif()
+
+if (YAHAT_STATIC_BOOST)
+    add_definitions(-DBOOST_ALL_STATIC_LINK=1)
+    set(Boost_USE_STATIC_LIBS ON)
+    message(STATUS "Using static boost")
 endif()
 
 find_package(Boost ${USE_BOOST_VERSION} REQUIRED MODULE COMPONENTS
