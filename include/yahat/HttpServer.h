@@ -125,6 +125,7 @@ boost::uuids::uuid generateUuid();
 struct Auth {
     std::string account;
     bool access = false;
+    int rcode = 0;
 
     /// Optional data the application can set for it's own use
     std::any extra;

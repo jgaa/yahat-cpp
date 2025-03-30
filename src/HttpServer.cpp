@@ -588,7 +588,7 @@ void DoSession(streamT& streamPtr,
         if (!request.auth.access) {
             LOG_TRACE << "Request was unauthorized!";
 
-            Response r{401, "Access Denied!"};
+            Response r{401, "Unauthorized"};
             r.compression = compression;
             http::response<http::string_body> res;
             res.base().set(http::field::server, instance.serverId());
@@ -715,7 +715,6 @@ HttpServer::HttpServer(const HttpConfig &config, authenticator_t authHandler, Me
 
     addRoute(config_.metrics_target, metrics_->metricsHandler(), "GET");
     LOG_INFO << "Metrics enabled at '" << config.metrics_target <<'\'';
-    addRoute(config_.metrics_target, metrics_->metricsHandler(), "GET");
 }
 #endif
 

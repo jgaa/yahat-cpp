@@ -934,7 +934,11 @@ public:
         auto * ptr = c.get();
         std::lock_guard lock(mutex_);
         auto key = DataType::makeKey(c->name(), c->labels(), c->type());
-        metrics_.emplace(key, std::move(c));
+        auto [it, inserted] = metrics_.emplace(key, std::move(c));
+        if (!inserted) {
+            assert(false);
+            throw std::invalid_argument("Metric already exists with the same labels");
+        }
         return ptr;
     }
 
