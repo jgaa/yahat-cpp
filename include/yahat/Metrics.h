@@ -196,6 +196,7 @@ public:
         const std::string& metricName() const noexcept { return metricName_; }
         std::string nameWithSuffix(const std::string& suffix) const;
         const labels_t& labels() const noexcept { return labels_; }
+        virtual const std::string& helpName() const noexcept { return name(); }
 
         virtual std::ostream& render(std::ostream& target) const = 0;
         std::ostream& renderCreated(std::ostream& target, bool postfix = false) const;
@@ -256,12 +257,17 @@ public:
 
         std::ostream& render(std::ostream& target) const override {
             target << total_name_ << ' ';
-            renderNumber(target, value()) << ' '; //<< '\n';
+            renderNumber(target, value()); //<< '\n';
             return renderCreated(target, true);
+        }
+
+        const std::string& helpName() const noexcept override {
+            return help_name_;
         }
 
     private:
         std::string total_name_ = makeNameWithSuffixAndLabels(name(), "total", labels());
+        std::string help_name_ = name() + "_total";
         alignas(cache_line_size_) std::atomic<T> value_{T{}};
     }; // Counter
 
@@ -304,7 +310,7 @@ public:
 
         std::ostream& render(std::ostream& target) const override {
             target << metricName() << ' ';
-            renderNumber(target, value()) << ' ';
+            renderNumber(target, value());
             return renderCreated(target, true);
         }
 
@@ -330,12 +336,17 @@ public:
             : DataType(DataType::Type::Info, std::move(name), std::move(help), std::move(unit), std::move(labels)) {}
 
         std::ostream& render(std::ostream& target) const override {
-            target << info_name_ << " 1 ";
+            target << info_name_ << " 1";
             return renderCreated(target, true);
+        }
+
+        const std::string& helpName() const noexcept override {
+            return help_name;
         }
 
     private:
         std::string info_name_ = makeNameWithSuffixAndLabels(name(), "info", labels());
+        std::string help_name = name() + "_info";
     }; // Gauge
 
     /**
@@ -405,9 +416,9 @@ public:
             for (auto row = 0u; row < values.size(); ++row) {
                 target << bucket_names_[row]  << ' ';
                 if (row == inf_row || row == count_row) {
-                    target << std::format("{} ", static_cast<uint64_t>(values[row]));
+                    target << std::format("{}", static_cast<uint64_t>(values[row]));
                 } else {
-                    renderNumber(target, values[row]) << ' ';
+                    renderNumber(target, values[row]);
                 }
                 renderCreated(target, true);
             }
@@ -518,9 +529,9 @@ public:
             for (size_t row = 0; row < values.size(); ++row) {
                 target << summary_names_[row] << ' ';
                 if (row == count_row) {
-                    target << std::format("{} ", static_cast<uint64_t>(values[row]));
+                    target << std::format("{}", static_cast<uint64_t>(values[row]));
                 } else {
-                    renderNumber(target, values[row]) << ' ';
+                    renderNumber(target, values[row]);
                 }
                 renderCreated(target, true);
             }
@@ -748,7 +759,7 @@ public:
         std::ostream& render(std::ostream& target) const override {
             std::lock_guard<std::mutex> lock(mutex_);
             for (size_t i = 0; i < states_.size(); ++i) {
-                target << state_names_[i] << " " << state_values_[i] << " ";
+                target << state_names_[i] << ' ' << state_values_[i];
                 renderCreated(target, true);
             }
             return target;

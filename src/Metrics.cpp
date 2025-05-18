@@ -46,14 +46,14 @@ void Metrics::generate(std::ostream &target)
             current_family = metric->name();
 
             if (!metric->help().empty()) {
-                target << "# HELP " << metric->name() << " " << metric->help() << "\n";
+                target << "# HELP " << metric->helpName() << ' ' << metric->help() << "\n";
             }
 
             assert(!metric->typeName().empty());
-            target << "# TYPE " << metric->name() << " " << metric->typeName() << "\n";
+            target << "# TYPE " << metric->helpName() << ' ' << metric->typeName() << "\n";
 
             if (!metric->unit().empty()) {
-                target << "# UNIT " << metric->name() << " " << metric->unit() << "\n";
+                target << "# UNIT " << metric->helpName() << ' ' << metric->unit() << "\n";
             }
         }
 
@@ -83,7 +83,7 @@ ostream &Metrics::DataType::renderCreated(std::ostream &target, bool postfix) co
     }
 
     if constexpr (show_metrics_timestamps) {
-        return target << chrono::system_clock::to_time_t(updated()) << '\n';
+        return target << ' ' << chrono::system_clock::to_time_t(updated()) << '\n';
     } else {
         return target << '\n';
     }

@@ -549,9 +549,13 @@ void DoSession(streamT& streamPtr,
         }
 
         Response::Compression compression = Response::Compression::NONE;
-        if (req[http::field::accept_encoding].find("gzip") != std::string::npos) {
-            compression = Response::Compression::GZIP;
-        }
+        // {
+        //     string ae = req[http::field::accept_encoding];
+        //     transform(ae.begin(), ae.end(), ae.begin(), ::tolower);
+        //     if (ae.find("gzip") != std::string::npos) {
+        //         compression = Response::Compression::GZIP;
+        //     }
+        // }
 
         LogRequest lr{request};
         lr.remote =  beast::get_lowest_layer(stream).socket().remote_endpoint();
