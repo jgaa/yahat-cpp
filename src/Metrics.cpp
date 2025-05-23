@@ -116,6 +116,11 @@ string Metrics::DataType::makeNameWithSuffixAndLabels(const std::string name, co
 
     uint count = 0;
     for (const auto& label : labels) {
+        if (label.first.empty()) {
+            // Labels must have a name
+            continue;
+        }
+
         if (++count > 1) {
             result += ",";
         }
