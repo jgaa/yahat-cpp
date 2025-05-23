@@ -664,7 +664,7 @@ public:
             }
             std::lock_guard<std::mutex> lock(mutex_);
             assert(index < MaxCapacity);
-            state_values_[index] = active ? 1 : 0;
+            state_values_[index] = active;
         }
 
         /**
@@ -759,7 +759,7 @@ public:
         std::ostream& render(std::ostream& target) const override {
             std::lock_guard<std::mutex> lock(mutex_);
             for (size_t i = 0; i < states_.size(); ++i) {
-                target << state_names_[i] << ' ' << state_values_[i];
+                target << state_names_[i] << ' ' << (state_values_[i] ? "1" : "0");
                 renderCreated(target, true);
             }
             return target;
@@ -776,7 +776,7 @@ public:
             }
         }
 
-        std::array<uint8_t, MaxCapacity> state_values_{};
+        std::array<bool, MaxCapacity> state_values_{};
 
         // Immutable data after init()
         std::vector<std::string> state_names_;
