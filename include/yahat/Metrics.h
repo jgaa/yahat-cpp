@@ -1022,6 +1022,47 @@ private:
     alignas(cache_line_size_) std::mutex mutex_;
 };
 
+
+#if __cplusplus >= 202002L
+
+template<typename T>
+concept SingleLabel = std::same_as<std::decay_t<T>, Metrics::label_t>;
+
+template<typename T>
+concept LabelList = std::same_as<std::decay_t<T>, Metrics::labels_t>;
+
+// 2) Combine them into one “either/or” concept
+template<typename T>
+concept LabelArg = SingleLabel<T> || LabelList<T>;
+
+// 3) Append‐one overloads (no change)
+inline void append_one(Metrics::labels_t& out, Metrics::label_t const&  l) {
+    out.push_back(l);
+}
+inline void append_one(Metrics::labels_t& out, Metrics::label_t&&       l) {
+    out.push_back(std::move(l));
+}
+inline void append_one(Metrics::labels_t& out, Metrics::labels_t const& ls) {
+    out.insert(out.end(), ls.begin(), ls.end());
+}
+inline void append_one(Metrics::labels_t& out, Metrics::labels_t&&      ls) {
+    out.insert(
+        out.end(),
+        std::make_move_iterator(ls.begin()),
+        std::make_move_iterator(ls.end())
+        );
+}
+
+// 4) The variadic combine, now constrained via concepts
+template<LabelArg... Args>
+Metrics::labels_t combine(Args&&... args) {
+    Metrics::labels_t result;
+    // optional: reserve space if desired
+    (append_one(result, std::forward<Args>(args)), ...);
+    return result;
+}
+#endif // C++20
+
 } // ns
 
 #endif // YAHAT_ENABLE_METRICS
