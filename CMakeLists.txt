@@ -147,6 +147,9 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC -DBOOST_COROUTINES_NO_DEPRECAT
 target_compile_definitions(${PROJECT_NAME} PUBLIC -DBOOST_COROUTINE_NO_DEPRECATION_WARNING=1)
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${VALDGRIND_ARGS})
 
+# Create namespace alias for the target
+add_library(yahat-cpp::yahat-cpp ALIAS ${PROJECT_NAME})
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     message(STATUS "Using g++, adding -Winterference-size flag")
     target_compile_options(${PROJECT_NAME} PUBLIC -Wno-interference-size)
@@ -166,22 +169,30 @@ endif()
 # importable in other CMake projects
 install(EXPORT ${PROJECT_NAME}
   FILE ${PROJECT_NAME}.cmake
-  DESTINATION lib/cmake/${PROJECT_NAME}
+  NAMESPACE yahat-cpp::
+  DESTINATION lib/cmake/yahat-cpp
 )
 
 include(CMakePackageConfigHelpers)
 # generate the config file that includes the exports
 configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
-  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.cmake"
-  INSTALL_DESTINATION "lib/cmake/${PROJECT_NAME}"
+  "${CMAKE_CURRENT_BINARY_DIR}/yahat-cppConfig.cmake"
+  INSTALL_DESTINATION "lib/cmake/yahat-cpp"
   NO_SET_AND_CHECK_MACRO
   NO_CHECK_REQUIRED_COMPONENTS_MACRO
   )
 
 write_basic_package_version_file(
-  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.cmake"
-  VERSION "${yahat_VERSION_MAJOR}.${yahat_VERSION_MINOR}"
+  "${CMAKE_CURRENT_BINARY_DIR}/yahat-cppConfigVersion.cmake"
+  VERSION "${YAHAT_VERSION}"
   COMPATIBILITY AnyNewerVersion
+)
+
+# Install the config and version files
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/yahat-cppConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/yahat-cppConfigVersion.cmake"
+  DESTINATION lib/cmake/yahat-cpp
 )
 
 #export(EXPORT ${PROJECT_NAME}
