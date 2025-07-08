@@ -59,6 +59,88 @@ add it to the metrics by calling `Metrics::AddUntyped<YourClass>()`.
 - openssl
 - gtest (if testing is enabled with CMake option `YAHAT_WITH_TESTS`)
 
+# Using yahat-cpp in your CMake project
+
+yahat-cpp is designed to be easily consumed by other CMake projects using modern CMake practices. You can integrate it using any of the following methods:
+
+## Method 1: Using find_package (after installation)
+
+First, install yahat-cpp:
+```bash
+git clone https://github.com/jgaa/yahat-cpp.git
+cd yahat-cpp
+mkdir build && cd build
+cmake ..
+make -j4
+sudo make install
+```
+
+Then in your CMakeLists.txt:
+```cmake
+find_package(yahat-cpp REQUIRED)
+target_link_libraries(your_target yahat-cpp::yahat-cpp)
+```
+
+## Method 2: Using FetchContent
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(yahat-cpp
+  GIT_REPOSITORY https://github.com/jgaa/yahat-cpp.git
+  GIT_TAG main  # or a specific tag/commit
+)
+
+# Optional: disable tests and examples
+set(YAHAT_WITH_TESTS OFF)
+set(YAHAT_WITH_EXAMPLES OFF)
+
+FetchContent_MakeAvailable(yahat-cpp)
+
+target_link_libraries(your_target yahat-cpp::yahat-cpp)
+```
+
+## Method 3: Using add_subdirectory
+
+If you have yahat-cpp as a subdirectory in your project:
+```cmake
+# Optional: disable tests and examples
+set(YAHAT_WITH_TESTS OFF)
+set(YAHAT_WITH_EXAMPLES OFF)
+
+add_subdirectory(path/to/yahat-cpp)
+target_link_libraries(your_target yahat-cpp::yahat-cpp)
+```
+
+## Dependencies
+
+Your project will also need to find the dependencies that yahat-cpp requires:
+```cmake
+find_package(Boost REQUIRED COMPONENTS system program_options coroutine context chrono json url)
+find_package(OpenSSL REQUIRED)
+find_package(ZLIB REQUIRED)
+find_package(Threads REQUIRED)
+```
+
+## Simple example
+
+```cpp
+#include "yahat/HttpServer.h"
+#include <iostream>
+
+int main() {
+    yahat::HttpConfig config;
+    config.http_endpoint = "0.0.0.0";
+    config.http_port = "8080";
+    
+    yahat::HttpServer server(config);
+    // Add your request handlers here
+    server.start().wait();
+    
+    return 0;
+}
+```
+
 # Yahat Chat
 This is a simple chat server that uses HTTP *Server-Sent Events* (SSE) to 
 send chat events to the participants. I wrote this example because I 
