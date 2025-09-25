@@ -22,7 +22,7 @@ jobs:
           brew install cmake boost openssl zlib googletest
 
       - name: Configure CMake
-        run: cmake -DYAHAT_WITH_TESTS=ON -DYAHAT_WITH_EXAMPLES=ON -DYAHAT_ENABLE_METRICS=ON -S . -B build
+        run: cmake -DBoost_NO_BOOST_CMAKE=ON -DYAHAT_STATIC_BOOST=OFF -DYAHAT_WITH_TESTS=ON -DYAHAT_WITH_EXAMPLES=ON -DYAHAT_ENABLE_METRICS=ON -S . -B build
 
       - name: Build
         run: cmake --build build
