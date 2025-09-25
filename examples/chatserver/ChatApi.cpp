@@ -149,7 +149,16 @@ yahat::Response ChatApi::onReqest(const yahat::Request &req)
                 sse->sendSse(event_name, data);
             }
         }, [wsse]() -> bool {
-            return !wsse.expired();
+            try {
+                if (auto sse = wsse.lock()) {
+                    // Write a minimal SSE event; dead pipes will error/close.
+                    sse->sendSse("ping", "{}");
+                    return true;
+                }
+            } catch (const std::exception&) {
+                // Any write error means the client is gone.
+            }
+            return false;
         });
 
         Response response{200, "OK"};

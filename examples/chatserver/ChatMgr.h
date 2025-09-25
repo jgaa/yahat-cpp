@@ -69,11 +69,11 @@ public:
          *
          * @param isAlive A probe function to check if the user is still active.
          */
-        User(probe_t isAlive);
+        User(probe_t probe);
 
         event_callback_t callback; ///< Callback function for the user.
         const std::chrono::steady_clock::time_point created{std::chrono::steady_clock::now()}; ///< Creation time of the user.
-        probe_t is_alive; ///< Liveness probe function.
+        probe_t probe; ///< Liveness probe function.
     };
 
     /**

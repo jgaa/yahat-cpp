@@ -26,9 +26,9 @@ void ChatMgr::addUser(const std::string &name)
     sendEvent(Event::USER_JOINED, name);
 }
 
-void ChatMgr::setEventCb(std::string_view name, event_callback_t && cb, probe_t isAlive)
+void ChatMgr::setEventCb(std::string_view name, event_callback_t && cb, probe_t probe)
 {
-    assert(isAlive);
+    assert(probe);
     assert(cb);
 
     lock_guard lock{mutex_};
@@ -37,7 +37,7 @@ void ChatMgr::setEventCb(std::string_view name, event_callback_t && cb, probe_t 
         throw std::invalid_argument("User not found");
     }
     it->second->callback = std::move(cb);
-    it->second->is_alive = std::move(isAlive);
+    it->second->probe = std::move(probe);
 }
 
 void ChatMgr::removeUser(std::string name) noexcept
@@ -91,8 +91,8 @@ void ChatMgr::housekeeping()
             // Just copy the names to be deleted under the lock.
             lock_guard lock{mutex_};
             for (const auto &[name, user] : users_) {
-                if (user->is_alive) { // Has the callback set, which mean that a sse channel was created
-                    if (!user->is_alive()) { // Still has a sse channel?
+                if (user->probe) { // Has the callback set, which mean that a sse channel was created
+                    if (!user->probe()) { // Still has a sse channel?
                         LOG_DEBUG << "User " << name << " is not alive";
                         users_to_delete.push_back(name);
                     }
