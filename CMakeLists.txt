@@ -48,7 +48,6 @@ if (YAHAT_STATIC_BOOST)
 endif()
 
 find_package(Boost ${USE_BOOST_VERSION} REQUIRED MODULE COMPONENTS
-    system
     program_options
     coroutine
     context
