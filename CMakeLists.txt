@@ -47,7 +47,7 @@ if (YAHAT_STATIC_BOOST)
     message(STATUS "Using static boost")
 endif()
 
-find_package(Boost ${USE_BOOST_VERSION} REQUIRED MODULE COMPONENTS
+find_package(Boost ${USE_BOOST_VERSION} REQUIRED COMPONENTS
     program_options
     coroutine
     context
