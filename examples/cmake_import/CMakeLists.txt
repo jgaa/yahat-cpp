@@ -14,7 +14,6 @@ endif()
 # We require `program_options` here.
 # The others are needed in order to link with the yahat library.
 find_package(Boost ${USE_BOOST_VERSION} REQUIRED COMPONENTS
-    system
     program_options
     coroutine
     context
