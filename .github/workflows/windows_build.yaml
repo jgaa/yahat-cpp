@@ -2,11 +2,46 @@ name: CMake Build and Test (Windows)
 
 on:
   push:
-    branches:
-      - '*'
+    branches: [main]
+    paths:
+      - 'CMakeLists.txt'
+      - 'Config.cmake.in'
+      - 'config.h.in'
+      - 'cmake/**'
+      - 'include/**'
+      - 'src/**'
+      - 'tests/**/CMakeLists.txt'
+      - 'tests/**/*.cmake'
+      - 'tests/**/*.cpp'
+      - 'tests/**/*.h'
+      - 'tests/**/*.hpp'
+      - 'examples/CMakeLists.txt'
+      - 'examples/apiserver/**'
+      - 'examples/chatserver/**'
+      - '.github/workflows/windows_build.yaml'
+      - '!**/*.md'
   pull_request:
-    branches:
-      - '*'
+    branches: [main]
+    paths:
+      - 'CMakeLists.txt'
+      - 'Config.cmake.in'
+      - 'config.h.in'
+      - 'cmake/**'
+      - 'include/**'
+      - 'src/**'
+      - 'tests/**/CMakeLists.txt'
+      - 'tests/**/*.cmake'
+      - 'tests/**/*.cpp'
+      - 'tests/**/*.h'
+      - 'tests/**/*.hpp'
+      - 'examples/CMakeLists.txt'
+      - 'examples/apiserver/**'
+      - 'examples/chatserver/**'
+      - '.github/workflows/windows_build.yaml'
+      - '!**/*.md'
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -18,7 +53,9 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Install dependencies with choco
         run: |
@@ -26,12 +63,12 @@ jobs:
 
       - name: Install vcpkg
         run: |
-          git clone https://github.com/microsoft/vcpkg.git
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git
           ./vcpkg/bootstrap-vcpkg.bat
 
       - name: Cache vcpkg
         id: cache-vcpkg
-        uses: actions/cache@v3
+        uses: actions/cache@v6
         with:
           path: vcpkg/installed
           key: ${{ runner.os }}-vcpkg-boost-slim

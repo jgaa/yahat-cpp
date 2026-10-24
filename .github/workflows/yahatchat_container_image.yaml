@@ -2,12 +2,23 @@ name: Make YahatChat container image
 
 on:
   push:
-    branches:
-      - main
-      - ci-container
-  # Optionally, trigger on release creation:
-  release:
-    types: [created]
+    branches: [main]
+    paths:
+      - 'CMakeLists.txt'
+      - 'Config.cmake.in'
+      - 'config.h.in'
+      - 'cmake/**'
+      - 'include/**'
+      - 'src/**'
+      - 'examples/CMakeLists.txt'
+      - 'examples/apiserver/CMakeLists.txt'
+      - 'examples/chatserver/**'
+      - 'docker/**'
+      - '.github/workflows/yahatchat_container_image.yaml'
+      - '!**/*.md'
+
+permissions:
+  contents: read
 
 defaults:
   run:
@@ -18,18 +29,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.MY_PAT }}
-      
+
       - name: Install uuid package
         run: sudo apt-get install uuid
-        
+
       - name: Build Docker image
         run: ./docker/build.sh --push

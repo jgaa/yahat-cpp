@@ -2,11 +2,46 @@ name: CMake Build and Test (Ubuntu)
 
 on:
   push:
-    branches:
-      - '*'
+    branches: [main]
+    paths:
+      - 'CMakeLists.txt'
+      - 'Config.cmake.in'
+      - 'config.h.in'
+      - 'cmake/**'
+      - 'include/**'
+      - 'src/**'
+      - 'tests/**/CMakeLists.txt'
+      - 'tests/**/*.cmake'
+      - 'tests/**/*.cpp'
+      - 'tests/**/*.h'
+      - 'tests/**/*.hpp'
+      - 'examples/CMakeLists.txt'
+      - 'examples/apiserver/**'
+      - 'examples/chatserver/**'
+      - '.github/workflows/ubuntu_build.yaml'
+      - '!**/*.md'
   pull_request:
-    branches:
-      - '*'
+    branches: [main]
+    paths:
+      - 'CMakeLists.txt'
+      - 'Config.cmake.in'
+      - 'config.h.in'
+      - 'cmake/**'
+      - 'include/**'
+      - 'src/**'
+      - 'tests/**/CMakeLists.txt'
+      - 'tests/**/*.cmake'
+      - 'tests/**/*.cpp'
+      - 'tests/**/*.h'
+      - 'tests/**/*.hpp'
+      - 'examples/CMakeLists.txt'
+      - 'examples/apiserver/**'
+      - 'examples/chatserver/**'
+      - '.github/workflows/ubuntu_build.yaml'
+      - '!**/*.md'
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -14,7 +49,9 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Install dependencies
         run: |
