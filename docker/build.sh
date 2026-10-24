@@ -50,7 +50,7 @@ docker run --rm ${tty_flags} \
   -v "${artifacts_dir}":/artifacts \
   build bash -c 'cd && mkdir build && cd build && \
     cmake -S /src -DCMAKE_BUILD_TYPE=Release -DYAHAT_WITH_EXAMPLES=ON -DYAHAT_WITH_TESTS=OFF -DYAHAT_STATIC_BOOST=ON -G Ninja && \
-    cmake --build . && cp -v bin/yahatchat /artifacts'
+    cmake --build . --target yahatchat && cp -v bin/yahatchat /artifacts'
 
 # Build the final image from the artifacts directory and tag it.
 docker build -f docker/App.dockerfile -t "${target_image}" "${artifacts_dir}"

@@ -5,6 +5,13 @@ option(YAHAT_WITH_EXAMPLES "Compile examples" ON)
 option(USE_LOGFAULT "Use logfault" OFF)
 option(YAHAT_USE_VALGRIND "Enable Valgrind" OFF)
 option(YAHAT_ENABLE_METRICS "Enable Metrics (OpenMetrics compatible)" ON)
+option(YAHAT_ENABLE_JSON_RPC "Enable the Boost.JSON JSON-RPC 2.0 dispatcher" OFF)
+option(YAHAT_ENABLE_MCP "Enable the native coroutine MCP server (implies JSON-RPC)" OFF)
+# Optional local test tooling only; npm is never invoked by the library build.
+set(YAHAT_MCP_CONFORMANCE_VERSION "0.2.0-alpha.12")
+if (YAHAT_ENABLE_MCP)
+    set(YAHAT_ENABLE_JSON_RPC ON)
+endif()
 option(YAHAT_STATIC_BOOST "Statically link boost" OFF)
 
 if (YAHAT_USE_VALGRIND)
@@ -12,7 +19,7 @@ if (YAHAT_USE_VALGRIND)
 endif()
 
 if (NOT DEFINED _VERSION)
-    set(YAHAT_VERSION 0.2.4)
+    set(YAHAT_VERSION 0.5.0)
 endif()
 add_definitions(-DYAHAT_VERSION=\"${YAHAT_VERSION}\")
 
@@ -62,7 +69,7 @@ set_property(TARGET boost PROPERTY
 
 find_package(OpenSSL REQUIRED)
 find_package(ZLIB REQUIRED)
-find_package(Threads)
+find_package(Threads REQUIRED)
 
 message(STATUS "Using ${CMAKE_CXX_COMPILER}")
 
@@ -82,10 +89,20 @@ add_library(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     PUBLIC
         ${Boost_LIBRARIES}
-        ${OPENSSL_LIBRARIES}
-        ${ZLIB_LIBRARIES}
-        ${CMAKE_THREAD_LIBS_INIT}
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        ZLIB::ZLIB
+        Threads::Threads
 )
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
+
+if (YAHAT_ENABLE_JSON_RPC)
+    target_sources(${PROJECT_NAME} PRIVATE src/JsonRpc.cpp include/yahat/JsonRpc.h)
+endif()
+
+if (YAHAT_ENABLE_MCP)
+    target_sources(${PROJECT_NAME} PRIVATE src/Mcp.cpp include/yahat/Mcp.h)
+endif()
 
 # Add /bigobj option for MSVC compiler
 if (MSVC)

@@ -8,6 +8,13 @@
 #include <span>
 #include <memory>
 #include <queue>
+#include <atomic>
+#include <optional>
+#include <any>
+#include <algorithm>
+#include <cstdint>
+#include <vector>
+#include <mutex>
 
 #include <boost/asio.hpp>
 #include <boost/asio/spawn.hpp>
@@ -117,6 +124,10 @@ struct HttpConfig {
 
     std::string metrics_target = "/metrics";
 #endif
+
+    // Unset preserves Boost.Beast's existing parser limits.
+    std::optional<uint64_t> max_request_body_size;
+    std::optional<uint32_t> max_request_header_size;
 };
 
 boost::uuids::uuid generateUuid();
@@ -183,6 +194,21 @@ struct Request : public std::enable_shared_from_this <Request>{
      */
     mutable std::function<void()> notify_connection_closed;
 
+    std::shared_ptr<std::atomic_bool> cancelled = std::make_shared<std::atomic_bool>(false);
+
+    bool isCancelled() const noexcept { return *cancelled; }
+
+    // Owned headers remain valid for continuations after parsing completes.
+    boost::beast::http::fields headers;
+
+    std::string_view getHeader(std::string_view name) const noexcept {
+        const auto it = headers.find({name.data(), name.size()});
+        if (it == headers.end()) {
+            return {};
+        }
+        return {it->value().data(), it->value().size()};
+    }
+
     bool expectBody() const noexcept {
         return type == Type::POST || type == Type::PUT || type == Type::PATCH;
     }
@@ -243,6 +269,14 @@ struct Response {
     mutable Compression compression = Compression::NONE;
     std::vector<std::pair<std::string, std::string>> cookies;
 
+    // Legacy empty-body status JSON remains the default.
+    bool generate_status_body = true;
+    boost::beast::http::fields headers;
+    std::optional<bool> auto_handle_cors;
+
+    // Copies application headers, rejecting invalid values and framing headers.
+    void applyHeaders(boost::beast::http::fields& target) const;
+
     bool ok() const noexcept {
         return code / 100 == 2;
     }
@@ -274,6 +308,21 @@ private:
     std::shared_ptr<Continuation> cont_;
 };
 
+/*! Configure routes before starting the server. Callbacks must be thread safe.
+ * Filters run before authentication, including for OPTIONS. Public routes
+ * explicitly bypass authentication. Defaults preserve legacy behavior.
+ */
+struct RouteOptions {
+    bool public_access = false;
+    bool exact_match = false;
+    std::optional<bool> auto_handle_cors;
+    // Unset accepts any origin; an empty list rejects every present Origin.
+    std::optional<std::vector<std::string>> allowed_origins;
+    std::vector<Request::Type> allowed_methods;
+    std::function<std::optional<Response>(const Request&)> request_filter;
+    std::function<Response(const Request&)> unauthorized_response;
+};
+
 class Continuation {
 public:
     class Stream {
@@ -291,6 +340,9 @@ public:
 
         virtual bool async_write_stream(const chunk_t& chunk) = 0;
 
+        // Default preserves source compatibility with existing custom Streams.
+        virtual bool finish_stream() { return false; }
+
         virtual bool async_write_header(boost::beast::http::response_serializer<boost::beast::http::empty_body>& ser) = 0;
 
         virtual void set_timeout(std::chrono::seconds timeout) = 0;
@@ -301,6 +353,9 @@ public:
 
     Continuation() = default;
     virtual ~Continuation() = default;
+
+    // Called before proceed(); existing continuations need not override it.
+    virtual void prepareResponse(const Response&) {}
 
     virtual Response proceed(Stream& stream, boost::asio::yield_context& yield) = 0;
 };
@@ -329,8 +384,17 @@ struct SseHandler : public Continuation {
     Response proceed(Stream& stream, boost::asio::yield_context& yield) override {
         stream_ = &stream;
         yield_ = &yield;
-        return proceeding();
+        auto response = proceeding();
+        if (sse_initialized_ && !eos_data_->closed) {
+            stream.finish_stream();
+        }
+        return response;
     }
+
+    // Set before proceed(). Applies to GET and POST response streams.
+    boost::beast::http::fields headers;
+
+    void prepareResponse(const Response& response) override;
 
 protected:
     /*! Called by the server to allow the handler to proceed with the SSE stream.
@@ -355,21 +419,20 @@ protected:
     }
 
     void setOnConnectionClosed(std::function<void()> cb) {
-        eos_data_.notify_connection_closed = std::move(cb);
+        eos_data_->notify_connection_closed = std::move(cb);
     }
 
 private:
     HttpServer& server_;
     struct EosData {
         std::array<char, 1> buffer;
-        //std::atomic_bool ok{true};
-        //boost::uuids::uuid uuid;
+        std::atomic_bool closed{false};
         std::function<void()> notify_connection_closed;
-    } eos_data_;
+    };
+    std::shared_ptr<EosData> eos_data_ = std::make_shared<EosData>();
     Stream *stream_{};
     boost::asio::yield_context *yield_{};
     bool sse_initialized_{false};
-    std::optional<boost::beast::http::response_serializer<boost::beast::http::empty_body>> sse_sr_;
 };
 
 /*! SSE handler where an app can append messages to a queue to send to the client
@@ -379,6 +442,7 @@ private:
 class SseQueueHandler : public SseHandler {
 public:
     SseQueueHandler(HttpServer& server);
+    ~SseQueueHandler() override;
 
     /*! Sends a raw SSE message.
      *
@@ -400,20 +464,25 @@ public:
      */
     void sendSse(std::string_view eventName, std::string_view data);
 
-    bool active() const noexcept {
-        return active_;
-    }
+    bool active() const noexcept;
+
+    // Zero preserves the legacy unlimited queue. Overflow throws length_error.
+    void setQueueLimit(size_t max_bytes);
+    // Zero disables heartbeat comments (the legacy behavior).
+    void setHeartbeatInterval(std::chrono::seconds interval);
 
     void closeSse();
+    // Drain queued messages, then terminate the chunked response.
+    void finishSse();
+
+protected:
+    Response proceeding() override;
 
 private:
-    Response proceeding() override;
     std::optional<std::string> next();
 
-    boost::asio::steady_timer timer_;
-    bool active_{false};
-    std::queue<std::string> queue_;
-    std::mutex mutex_;
+    struct QueueState;
+    std::shared_ptr<QueueState> state_;
 };
 
 struct AuthReq {
@@ -561,6 +630,9 @@ public:
 
     static std::string_view version() noexcept;
 
+    void addRouteWithOptions(std::string_view target, handler_t handler, RouteOptions options);
+    const RouteOptions& routeOptions(std::string_view target) const;
+
     std::pair<bool, std::string_view /* user name */> Authenticate(const std::string_view& authHeader);
 
     // Called by the HTTP server implementation template
@@ -612,14 +684,16 @@ public:
 
 private:
     void startWorkers();
+    std::map<std::string, handler_t>::const_iterator findRoute(std::string_view target) const;
 
     const HttpConfig& config_;
 #ifdef YAHAT_ENABLE_METRICS
     std::shared_ptr<YahatInstanceMetrics> metrics_{};
 #endif
     const authenticator_t authenticator_;
-    std::map<std::string, handler_t> routes_;
     boost::asio::io_context ctx_;
+    std::map<std::string, handler_t> routes_;
+    std::map<std::string, RouteOptions> route_options_;
     std::vector<std::thread> workers_;
     std::promise<void> promise_;
     const std::string server_;

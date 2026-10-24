@@ -177,9 +177,29 @@ void RequestHandler::enableMetrics(HttpServer& server, std::string_view target)
 #endif
 
 
+void SseHandler::prepareResponse(const Response& response) {
+    if (response.cors) {
+        headers.set(http::field::access_control_allow_origin, "*");
+        headers.set(http::field::access_control_allow_credentials, "true");
+        headers.set(http::field::access_control_allow_methods, "GET,OPTIONS,POST,PUT,PATCH,DELETE");
+        headers.set(http::field::access_control_allow_headers,
+                    "Authorization, Content-Encoding, Access-Control-Allow-Headers, Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers");
+    }
+    response.applyHeaders(headers);
+    for (const auto& cookie : response.cookies) {
+        Response value;
+        value.headers.set(http::field::set_cookie, format("{}={}", cookie.first, cookie.second));
+        http::fields validated;
+        value.applyHeaders(validated);
+        headers.insert(http::field::set_cookie, validated[http::field::set_cookie]);
+    }
+}
+
 bool SseHandler::send(std::string_view message)
 {
-    //stream_->set_timeout(std::chrono::seconds(server().config().http_io_timeout));
+    if (eos_data_->closed) {
+        return false;
+    }
     stream_->disable_timeout();
     boost::system::error_code ec;
 
@@ -188,11 +208,16 @@ bool SseHandler::send(std::string_view message)
         http::response<http::empty_body>  res{http::status::ok, 11};
         res.set(http::field::server, "yahat "s + YAHAT_VERSION);
         res.set(http::field::content_type, "text/event-stream");
-        res.set(http::field::keep_alive, "true");
+        // Continuations close the connection after their final chunk. Tell
+        // clients before they try reusing it for another HTTP request.
+        res.keep_alive(false);
         res.chunked(true);
-        sse_sr_.emplace(res);
+        Response extra_headers;
+        extra_headers.headers = headers;
+        extra_headers.applyHeaders(res.base());
+        http::response_serializer<http::empty_body> serializer{res};
 
-        if (!stream_->async_write_header(*sse_sr_)) {
+        if (!stream_->async_write_header(serializer)) {
             return false;
         }
 
@@ -201,19 +226,20 @@ bool SseHandler::send(std::string_view message)
         // Set up a callback for the read-direction to make sure that
         // we detect if the SSE connection is closed while it is idle.
 
-        boost::asio::mutable_buffer rbb{eos_data_.buffer.data(), eos_data_.buffer.size()};
-
-        stream_->async_read_stream(rbb, [this](boost::system::error_code ec, size_t) {
-            LOG_DEBUG << "Request - Read handler called: " << ec.message();
-            //eos_data_.ok = false;
-            // if (eos_data_.notify_connection_closed) {
-            //     eos_data_.notify_connection_closed();
-            // }
+        auto state = eos_data_;
+        boost::asio::mutable_buffer rbb{state->buffer.data(), state->buffer.size()};
+        stream_->async_read_stream(rbb, [state](boost::system::error_code ec, size_t) {
+            if (ec == net::error::operation_aborted) return;
+            // Incoming bytes are unexpected once this response becomes SSE.
+            LOG_DEBUG << "SSE connection closed or received unexpected input: " << ec.message();
+            if (!state->closed.exchange(true) && state->notify_connection_closed) {
+                state->notify_connection_closed();
+            }
         });
     }
 
     if (!message.empty()) {
-        LOG_TRACE << "Sending message: " << message;
+        LOG_TRACE << "Sending SSE message (" << message.size() << " bytes)";
         boost::asio::const_buffer b{message.data(), message.size()};
         auto c = http::make_chunk(b);
         if (!stream_->async_write_stream(http::make_chunk(b))) {
@@ -224,66 +250,151 @@ bool SseHandler::send(std::string_view message)
     return true;
 };
 
-SseQueueHandler::SseQueueHandler(HttpServer &server)
-    : SseHandler{server}, timer_{server.getCtx()} {
+struct SseQueueHandler::QueueState {
+    explicit QueueState(boost::asio::io_context& ctx) : timer{ctx} {}
+    boost::asio::steady_timer timer;
+    std::atomic_bool active{false};
+    bool closed = false;
+    bool finishing = false;
+    bool wake_pending = false;
+    size_t queued_bytes = 0;
+    size_t max_bytes = 0;
+    std::chrono::seconds heartbeat{0};
+    std::queue<std::string> queue;
+    std::mutex mutex;
+    std::optional<boost::asio::any_io_executor> executor;
 
-    setOnConnectionClosed([this] {
-        closeSse();
+    // Called with mutex held. All timer operations run on the session strand.
+    static void wake(const std::shared_ptr<QueueState>& state) {
+        if (state->executor && !state->wake_pending) {
+            state->wake_pending = true;
+            boost::asio::post(*state->executor, [state] {
+                std::lock_guard lock{state->mutex};
+                state->wake_pending = false;
+                state->timer.cancel();
+            });
+        }
+    }
+};
+
+SseQueueHandler::SseQueueHandler(HttpServer &server)
+    : SseHandler{server}, state_{std::make_shared<QueueState>(server.getCtx())} {
+    std::weak_ptr<QueueState> weak = state_;
+    setOnConnectionClosed([weak] {
+        if (auto state = weak.lock()) {
+            std::lock_guard lock{state->mutex};
+            state->closed = true;
+            state->active = false;
+            QueueState::wake(state);
+        }
     });
 }
 
-void SseQueueHandler::sendSse(std::string message) {
-    LOG_TRACE << "Queuing sse message: " << message;
-    {
-        std::lock_guard lock{mutex_};
-        queue_.push(std::move(message));
+SseQueueHandler::~SseQueueHandler() {
+    closeSse();
+}
+
+bool SseQueueHandler::active() const noexcept {
+    return state_->active;
+}
+
+void SseQueueHandler::setQueueLimit(size_t max_bytes) {
+    std::lock_guard lock{state_->mutex};
+    if (max_bytes && state_->queued_bytes > max_bytes) {
+        throw std::length_error{"SSE queue already exceeds requested limit"};
     }
-    timer_.cancel_one();
+    state_->max_bytes = max_bytes;
+}
+
+void SseQueueHandler::setHeartbeatInterval(std::chrono::seconds interval) {
+    if (interval.count() < 0) throw std::invalid_argument{"Negative SSE heartbeat interval"};
+    std::lock_guard lock{state_->mutex};
+    state_->heartbeat = interval;
+    QueueState::wake(state_);
+}
+
+void SseQueueHandler::sendSse(std::string message) {
+    std::lock_guard lock{state_->mutex};
+    if (state_->closed || state_->finishing) {
+        return;
+    }
+    if (state_->max_bytes && message.size() > state_->max_bytes - state_->queued_bytes) {
+        LOG_WARN << "SSE queue capacity exceeded";
+        throw std::length_error{"SSE queue capacity exceeded"};
+    }
+    state_->queue.push(std::move(message));
+    state_->queued_bytes += state_->queue.back().size();
+    QueueState::wake(state_);
 }
 
 void SseQueueHandler::sendSse(std::string_view eventName, std::string_view data)
 {
-    auto msg = format("event: {}\ndata: {}\n\n", eventName, data);
-    sendSse(msg);
+    if (eventName.empty() || eventName.find_first_of("\r\n") != std::string_view::npos
+        || data.find_first_of("\r\n") != std::string_view::npos) {
+        throw std::invalid_argument{"SSE event name and data must be single lines"};
+    }
+    sendSse(format("event: {}\ndata: {}\n\n", eventName, data));
 }
 
 void SseQueueHandler::closeSse() {
-    active_ = false;
-    timer_.cancel();
+    std::lock_guard lock{state_->mutex};
+    state_->closed = true;
+    state_->active = false;
+    QueueState::wake(state_);
+}
+
+void SseQueueHandler::finishSse() {
+    std::lock_guard lock{state_->mutex};
+    state_->finishing = true;
+    QueueState::wake(state_);
 }
 
 Response SseQueueHandler::proceeding() {
-    active_ = true;
-    do {
-        while(!queue_.empty()) {
-            if (!send(queue_.front())) {
-                active_ = false;
+    auto state = state_;
+    {
+        std::lock_guard lock{state->mutex};
+        state->executor = getYield().get_executor();
+        state->active = !state->closed;
+    }
+    LOG_DEBUG << "Starting queued SSE response";
+    if (state->active && !send("")) closeSse();
+    while (state->active) {
+        if (auto message = next()) {
+            if (!send(*message)) {
+                closeSse();
+            }
+            continue;
+        }
+        std::chrono::seconds heartbeat;
+        {
+            std::lock_guard lock{state->mutex};
+            if (state->closed || (state->finishing && state->queue.empty())) {
                 break;
             }
-            queue_.pop();
+            heartbeat = state->heartbeat;
         }
-        if (active_) {
-            boost::system::error_code ec;
-            timer_.expires_after(std::chrono::seconds{30});
-            timer_.async_wait(getYield()[ec]);
-            if (ec && ec != boost::asio::error::operation_aborted) {
-                active_ = false;
-                break;
-            }
+        boost::system::error_code ec;
+        state->timer.expires_after(heartbeat.count() ? heartbeat : std::chrono::seconds{30});
+        state->timer.async_wait(getYield()[ec]);
+        if (ec && ec != boost::asio::error::operation_aborted) {
+            break;
         }
-    } while (active_);
-
+        if (!ec && heartbeat.count() && !send(":\n\n")) closeSse();
+    }
+    closeSse();
+    LOG_DEBUG << "Queued SSE response finished";
     return {};
 }
 
 std::optional<string> SseQueueHandler::next() {
-    std::lock_guard lock{mutex_};
-    if (queue_.empty()) {
+    std::lock_guard lock{state_->mutex};
+    if (state_->closed || state_->queue.empty()) {
         return {};
     }
-    string msg = std::move(queue_.front());
-    queue_.pop();
-    return msg;
+    auto message = std::move(state_->queue.front());
+    state_->queue.pop();
+    state_->queued_bytes -= message.size();
+    return message;
 }
 
 namespace {
@@ -309,12 +420,16 @@ private:
 template <typename T>
 class StreamImpl : public yahat::Continuation::Stream {
 public:
-    explicit StreamImpl(T& stream, boost::asio::yield_context& yield)
-        : stream_{stream}, yield_{yield} {}
+    explicit StreamImpl(std::shared_ptr<T> stream, boost::asio::yield_context& yield,
+                        std::function<void()> disconnected)
+        : owner_{std::move(stream)}, stream_{*owner_}, yield_{yield}
+        , disconnected_{std::move(disconnected)}
+        , read_state_{std::make_shared<ReadState>(yield.get_executor())} {}
 
     size_t async_read_stream(boost::asio::mutable_buffer buffer) override {
         boost::system::error_code ec;
         auto len = boost::asio::async_read(stream_, buffer, yield_[ec]);
+        notifyDisconnected(ec);
         if (ec) {
             return 0;
         }
@@ -323,23 +438,57 @@ public:
 
     void async_read_stream(boost::asio::mutable_buffer buffer,
                            std::function<void (const boost::system::error_code &, std::size_t)> handler) override {
-        boost::system::error_code ec;
-        boost::asio::async_read(stream_, buffer, handler);
+        if (read_state_->pending) throw std::logic_error{"A stream read is already pending"};
+        read_state_->pending = true;
+        auto owner = owner_;
+        auto disconnected = disconnected_;
+        auto state = read_state_;
+        boost::asio::async_read(stream_, buffer, boost::asio::bind_executor(yield_.get_executor(),
+            [owner, disconnected, state, handler = std::move(handler)](const boost::system::error_code& ec, size_t bytes) {
+                state->pending = false;
+                state->done.cancel();
+                try {
+                    handler(ec, bytes);
+                } catch (...) {
+                    LOG_ERROR << "Exception in stream read callback";
+                }
+                if (ec && ec != net::error::operation_aborted && disconnected) {
+                    try { disconnected(); }
+                    catch (...) { LOG_ERROR << "Exception in disconnect callback"; }
+                }
+            }));
     }
     bool async_write_stream(boost::asio::const_buffer buffer) override {
         boost::system::error_code ec;
         boost::beast::net::async_write(stream_, buffer, yield_[ec]);
+        notifyDisconnected(ec);
         return !ec;
     }
     bool async_write_stream(const chunk_t &chunk) override {
         boost::system::error_code ec;
         boost::beast::net::async_write(stream_, chunk, yield_[ec]);
+        notifyDisconnected(ec);
         return !ec;
     }
     bool async_write_header(boost::beast::http::response_serializer<http::empty_body> &ser) override {
         boost::system::error_code ec;
         http::async_write_header(stream_, ser, yield_[ec]);
+        notifyDisconnected(ec);
         return !ec;
+    }
+    bool finish_stream() override {
+        boost::system::error_code ec;
+        net::async_write(stream_, http::make_chunk_last(), yield_[ec]);
+        notifyDisconnected(ec);
+        return !ec;
+    }
+    // Await cancellation of the read monitor before starting TLS shutdown.
+    void finishReads() {
+        if (read_state_->pending) {
+            boost::system::error_code ec;
+            beast::get_lowest_layer(stream_).socket().cancel(ec);
+            while (read_state_->pending) read_state_->done.async_wait(yield_[ec]);
+        }
     }
     void set_timeout(chrono::seconds timeout) override {
         beast::get_lowest_layer(stream_).expires_after(timeout);
@@ -349,8 +498,24 @@ public:
     }
 
 private:
+    struct ReadState {
+        explicit ReadState(boost::asio::any_io_executor executor) : done{executor} {
+            done.expires_at(std::chrono::steady_clock::time_point::max());
+        }
+        boost::asio::steady_timer done;
+        bool pending = false; // Accessed only on the session strand.
+    };
+    void notifyDisconnected(const boost::system::error_code& ec) {
+        if (ec && ec != net::error::operation_aborted && disconnected_) {
+            try { disconnected_(); }
+            catch (...) { LOG_ERROR << "Exception in disconnect callback"; }
+        }
+    }
+    std::shared_ptr<T> owner_;
     T& stream_;
     boost::asio::yield_context& yield_;
+    std::function<void()> disconnected_;
+    std::shared_ptr<ReadState> read_state_;
 };
 
 struct LogRequest {
@@ -423,7 +588,7 @@ auto makeReply(HttpServer& server, T&res, const Response& r, bool closeConnectio
     string_view body = r.body;
     string body_buffer;
     if (rt != Request::Type::OPTIONS) {
-        if (r.body.empty()) {
+        if (r.body.empty() && r.generate_status_body) {
             // Use the http code and reason to compose a json reply
             body_buffer = r.responseStatusAsJson();
             body = body_buffer;
@@ -468,6 +633,7 @@ auto makeReply(HttpServer& server, T&res, const Response& r, bool closeConnectio
     if (auto mime = r.mimeType(); !mime.empty()) {
         res.base().set(http::field::content_type, {mime.data(), mime.size()});
     }
+    r.applyHeaders(res.base());
     res.prepare_payload();
     lr.set(res);
 }
@@ -487,6 +653,10 @@ void DoSession(streamT& streamPtr,
 
     assert(streamPtr);
     auto& stream = *streamPtr;
+    ScopedExit cancel_pending{[&stream] {
+        boost::system::error_code ignored;
+        beast::get_lowest_layer(stream).socket().cancel(ignored);
+    }};
 
     LOG_TRACE << "Processing session: " << beast::get_lowest_layer(stream).socket().remote_endpoint()
               << " --> " << beast::get_lowest_layer(stream).socket().local_endpoint();
@@ -508,17 +678,29 @@ void DoSession(streamT& streamPtr,
         LOG_TRACE << "Start of loop - close=" << close;
 
         beast::get_lowest_layer(stream).expires_after(chrono::seconds(instance.config().http_io_timeout));
-        http::request<http::string_body> req;
-        auto bytes = http::async_read(stream, buffer, req, yield[ec]);
+        http::request_parser<http::string_body> parser;
+        if (const auto limit = instance.config().max_request_body_size) parser.body_limit(*limit);
+        if (const auto limit = instance.config().max_request_header_size) parser.header_limit(*limit);
+        auto bytes = http::async_read(stream, buffer, parser, yield[ec]);
         if(ec == http::error::end_of_stream) {
             LOG_TRACE << "Exiting loop end_of_stream";
             break;
         }
         if(ec) {
             LOG_ERROR << "read failed: " << ec.message();
+            if (ec == http::error::body_limit || ec == http::error::header_limit) {
+                // Reject before dispatch without retaining an oversized request.
+                const auto status = ec == http::error::body_limit
+                    ? http::status::payload_too_large : http::status::request_header_fields_too_large;
+                http::response<http::empty_body> denied{status, 11};
+                denied.keep_alive(false);
+                denied.content_length(0);
+                http::async_write(stream, denied, yield[ec]);
+            }
             break;
         }
 
+        auto req = parser.release();
         if (!req.keep_alive()) {
             close = true;
         }
@@ -539,11 +721,12 @@ void DoSession(streamT& streamPtr,
         }
 
         auto curr_req = make_shared<Request>(req.base().target(), std::move(req_body), to_type(req.base().method()), &yield, isTls);
+        curr_req->headers = req.base();
         assert(curr_req);
         auto& request = *curr_req;
 
         // copy cookies
-        const auto cookies = req[http::field::cookie];
+        const auto cookies = request.getHeader("Cookie");
         for(auto c : parse_cookies(cookies)) {
             request.cookies.emplace_back(c);
         }
@@ -562,7 +745,52 @@ void DoSession(streamT& streamPtr,
         lr.local = beast::get_lowest_layer(stream).socket().local_endpoint();
         lr.location = req.base().target();
 
-        if (const auto& ah = instance.authenticator()) {
+        const auto& options = instance.routeOptions(request.target);
+        const bool auto_cors = options.auto_handle_cors.value_or(instance.config().auto_handle_cors);
+        auto configure_cors = [&](Response& reply) {
+            reply.cors = reply.auto_handle_cors.value_or(auto_cors);
+            if (reply.cors && options.allowed_origins && !request.getHeader("Origin").empty()) {
+                // The policy has already validated this origin; errors for invalid
+                // origins explicitly disable CORS below.
+                reply.headers.set(http::field::access_control_allow_origin, request.getHeader("Origin"));
+                reply.headers.insert(http::field::vary, "Origin");
+            }
+        };
+        auto send_reply = [&](Response reply) {
+            configure_cors(reply);
+            reply.compression = compression;
+            close = close || reply.close;
+            http::response<http::string_body> res;
+            makeReply(instance, res, reply, close, lr, request.type);
+            http::async_write(stream, res, yield[ec]);
+            if (ec) {
+                close = true;
+                LOG_DEBUG << "HTTP response write failed: " << ec.message();
+            }
+        };
+
+        // Origin validation precedes authentication and automatic preflight handling.
+        const auto origins = request.headers.equal_range(http::field::origin);
+        const bool invalid_origin = options.allowed_origins && origins.first != origins.second
+            && (std::next(origins.first) != origins.second
+                || std::find(options.allowed_origins->begin(), options.allowed_origins->end(),
+                             request.getHeader("Origin")) == options.allowed_origins->end());
+        if (invalid_origin) {
+            LOG_DEBUG << "Rejecting HTTP request with disallowed Origin";
+            Response denied{403, "Forbidden"};
+            denied.auto_handle_cors = false;
+            send_reply(std::move(denied));
+            continue;
+        }
+        if (options.request_filter) {
+            if (auto rejected = options.request_filter(request)) {
+                send_reply(std::move(*rejected));
+                continue;
+            }
+        }
+        if (options.public_access) {
+            request.auth.access = true;
+        } else if (const auto& ah = instance.authenticator()) {
             AuthReq ar{request, yield};
             if (auto it = req.base().find(http::field::authorization) ; it != req.base().end()) {
                 auto [a, u] = instance.Authenticate({it->value().data(), it->value().size()});
@@ -573,18 +801,9 @@ void DoSession(streamT& streamPtr,
             lr.user = request.auth.account;
         }
 
-        if (request.type == Request::Type::OPTIONS && instance.config() .auto_handle_cors) {
+        if (request.type == Request::Type::OPTIONS && auto_cors) {
             LOG_TRACE << "This is an OPTIONS request. Just returning a dummy CORS reply";
-            Response r{200, "OK"};
-            r.cors = true;
-            r.compression = compression;
-            http::response<http::string_body> res;
-            res.base().set(http::field::server, instance.serverId());
-            makeReply(instance, res, r, close, lr, request.type);
-            http::async_write(stream, res, yield[ec]);
-            if(ec) {
-                LOG_ERROR << "write failed: " << ec.message();
-            }
+            send_reply(Response{200, "OK"});
 
             continue;
         }
@@ -592,24 +811,14 @@ void DoSession(streamT& streamPtr,
         if (!request.auth.access) {
             LOG_TRACE << "Request was unauthorized!";
 
-            Response r{401, "Unauthorized"};
-            r.compression = compression;
-            http::response<http::string_body> res;
-            res.base().set(http::field::server, instance.serverId());
-            if (instance.config().enable_http_basic_auth) {
-                if (auto realm = instance.config().http_basic_auth_realm; !realm.empty()) {
-                    res.base().set(http::field::www_authenticate, "Basic realm="s + realm);
-                } else {
-                    res.base().set(http::field::www_authenticate, "Basic");
-                }
+            Response r = options.unauthorized_response
+                ? options.unauthorized_response(request) : Response{401, "Unauthorized"};
+            if (!options.unauthorized_response && instance.config().enable_http_basic_auth) {
+                const auto& realm = instance.config().http_basic_auth_realm;
+                r.headers.set(http::field::www_authenticate,
+                              realm.empty() ? "Basic" : "Basic realm="s + realm);
             }
-            r.cors = instance.config().auto_handle_cors;
-            makeReply(instance, res, r, close, lr, request.type);
-            http::async_write(stream, res, yield[ec]);
-            if(ec) {
-                LOG_ERROR << "write failed: " << ec.message();
-            }
-
+            send_reply(std::move(r));
             continue;
         }
 
@@ -620,18 +829,38 @@ void DoSession(streamT& streamPtr,
             }
         }
 
+        if (!options.allowed_methods.empty()
+            && std::find(options.allowed_methods.begin(), options.allowed_methods.end(), request.type)
+                == options.allowed_methods.end()) {
+            Response denied{405, "Method Not Allowed"};
+            std::string allow;
+            for (const auto method : options.allowed_methods) {
+                if (!allow.empty()) allow += ", ";
+                allow += toString(method);
+            }
+            denied.headers.set(http::field::allow, allow);
+            send_reply(std::move(denied));
+            continue;
+        }
+
         auto reply = instance.onRequest(request);
         if (reply.close) {
             close = true;
         }
 
         if (auto cont = reply.continuation()) {
-            StreamImpl stream_wrapper(stream, yield);
+            configure_cors(reply);
+            cont->prepareResponse(reply);
+            StreamImpl stream_wrapper(streamPtr, yield, [curr_req] {
+                if (!curr_req->cancelled->exchange(true) && curr_req->notify_connection_closed) {
+                    curr_req->notify_connection_closed();
+                }
+            });
             cont->proceed(stream_wrapper, yield);
-            // TODO: [jgaa] Send a chunked response and let the request live?
+            stream_wrapper.finishReads();
             close = true;
         } else {
-            reply.cors = instance.config().auto_handle_cors;
+            configure_cors(reply);
             reply.compression = compression;
 
             LOG_TRACE << "Preparing reply";
@@ -647,6 +876,8 @@ void DoSession(streamT& streamPtr,
         LOG_TRACE << "End of loop";
     }
 
+    // Cancel an SSE disconnect monitor even after normal stream completion.
+    beast::get_lowest_layer(stream).socket().cancel(ec);
     if constexpr(isTls) {
         beast::get_lowest_layer(stream).expires_after(chrono::seconds(instance.config().http_io_timeout));
 
@@ -802,7 +1033,7 @@ std::future<void> HttpServer::start()
             size_t errorCnt = 0;
             const size_t maxErrors = 64;
             for(;!ctx_.stopped() && errorCnt < maxErrors;) {
-                tcp::socket socket{ctx_};
+                tcp::socket socket{net::make_strand(ctx_)};
                 acceptor.async_accept(socket, yield[ec]);
                 if(ec) {
                     // I'm unsure about how to deal with errors here.
@@ -820,7 +1051,8 @@ std::future<void> HttpServer::start()
                 errorCnt = 0;
 
                 if (is_tls) {
-                    boost::asio::spawn(acceptor.get_executor(), [this, sslCtx, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
+                    auto executor = socket.get_executor();
+                    boost::asio::spawn(executor, [this, sslCtx, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
                         auto stream = make_shared<beast::ssl_stream<beast::tcp_stream>>(std::move(socket), *sslCtx);
                         try {
                             DoSession<true>(stream, *this, yield);
@@ -830,7 +1062,8 @@ std::future<void> HttpServer::start()
                     }, boost::asio::detached);
 
                 } else {
-                    boost::asio::spawn(acceptor.get_executor(), [this, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
+                    auto executor = socket.get_executor();
+                    boost::asio::spawn(executor, [this, socket=std::move(socket)](boost::asio::yield_context yield) mutable {
                         auto stream = make_shared<beast::tcp_stream>(std::move(socket));
                         try {
                             DoSession<false>(stream, *this, yield);
@@ -898,7 +1131,72 @@ void HttpServer::addRoute(std::string_view target, handler_t handler)
     }
 #endif
     string key{target};
+    route_options_.erase(key);
     routes_[std::move(key)] = handler;
+}
+
+void HttpServer::addRouteWithOptions(std::string_view target, handler_t handler, RouteOptions options) {
+    if (!handler) {
+        throw std::invalid_argument{"Route handler cannot be null"};
+    }
+    addRoute(target, std::move(handler));
+    route_options_[std::string{target}] = std::move(options);
+}
+
+std::map<std::string, HttpServer::handler_t>::const_iterator
+HttpServer::findRoute(std::string_view target) const {
+    auto best = routes_.end();
+    for (auto it = routes_.begin(); it != routes_.end(); ++it) {
+        const auto& route = it->first;
+        const auto policy = route_options_.find(route);
+        const bool exact = policy != route_options_.end() && policy->second.exact_match;
+        if (target == route || (!exact && target.size() > route.size()
+            && target.substr(0, route.size()) == route && target[route.size()] == '/')) {
+            if (best == routes_.end() || route.size() > best->first.size()) {
+                best = it;
+            }
+        }
+    }
+    return best;
+}
+
+const RouteOptions& HttpServer::routeOptions(std::string_view target) const {
+    static const RouteOptions defaults;
+    const auto route = findRoute(target);
+    if (route != routes_.end()) {
+        if (auto it = route_options_.find(route->first); it != route_options_.end()) {
+            return it->second;
+        }
+    }
+    return defaults;
+}
+
+void Response::applyHeaders(http::fields& target) const {
+    for (const auto& header : headers) {
+        const auto name = header.name_string();
+        const auto value = header.value();
+        if (name.empty() || std::any_of(name.begin(), name.end(), [](unsigned char ch) {
+            return !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+                || (ch >= '0' && ch <= '9') || std::string_view{"!#$%&'*+-.^_`|~"}.find(ch) != std::string_view::npos);
+        }) || std::any_of(value.begin(), value.end(), [](unsigned char ch) {
+            return (ch < 32 && ch != '\t') || ch == 127;
+        })) {
+            throw std::invalid_argument{"Invalid HTTP response header"};
+        }
+        switch (header.name()) {
+        case http::field::content_length:
+        case http::field::transfer_encoding:
+        case http::field::connection:
+        case http::field::keep_alive:
+        case http::field::trailer:
+        case http::field::upgrade:
+            throw std::invalid_argument{"HTTP framing headers are managed by the server"};
+        default: break;
+        }
+    }
+    // Replace generated values while preserving repeated application fields.
+    for (const auto& header : headers) target.erase(header.name_string());
+    for (const auto& header : headers) target.insert(header.name_string(), header.value());
 }
 
 std::pair<bool, string_view> HttpServer::Authenticate(const std::string_view &/*authHeader*/)
@@ -910,33 +1208,10 @@ std::pair<bool, string_view> HttpServer::Authenticate(const std::string_view &/*
 
 Response HttpServer::onRequest(Request &req) noexcept
 {
-    // Find the route!
-    string_view tw{req.target.data(), req.target.size()};
-
-    RequestHandler *best_handler = {};
-    string_view best_route;
-
-    for(const auto& [route, handler] : routes_) {
-        const auto len = route.size();
-
-        // Target must be at least the lenght of the route
-        if (tw.size() < len) {
-            continue;
-        }
-
-        // Target is only relevant if it's the same size as the route
-        // or if it has a slash at the location where target ends
-        if (tw.size() == len || tw.at(len) == '/') {
-            auto relevant = tw.substr(0, len);
-            if (relevant == route) {
-                // We need the longest possible match
-                if (!best_handler || (best_route.size() < route.size())) {
-                    best_handler = handler.get();
-                    best_route = route;
-                }
-            }
-        }
-    }
+    const auto match = findRoute(req.target);
+    auto* best_handler = match == routes_.end() ? nullptr : match->second.get();
+    const std::string_view best_route = match == routes_.end() ? std::string_view{} : match->first;
+    const std::string_view tw = req.target;
 
     if (best_handler) {
         try {

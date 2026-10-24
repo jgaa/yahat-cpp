@@ -35,4 +35,6 @@
 *.user
 build
 .kate-swp
+/tests/mcp_conformance/node_modules/
+/tests/mcp-results/
 / CMakeSettings.json

@@ -1,0 +1,7 @@
+{
+  "name": "yahat-mcp-conformance",
+  "private": true,
+  "description": "Optional local test tooling; never a yahat library dependency",
+  "engines": { "node": ">=22" },
+  "dependencies": { "@modelcontextprotocol/conformance": "@YAHAT_MCP_CONFORMANCE_VERSION@" }
+}

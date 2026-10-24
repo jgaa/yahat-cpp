@@ -2,4 +2,5 @@
 
 #cmakedefine USE_LOGFAULT
 #cmakedefine YAHAT_ENABLE_METRICS
-
+#cmakedefine YAHAT_ENABLE_JSON_RPC
+#cmakedefine YAHAT_ENABLE_MCP

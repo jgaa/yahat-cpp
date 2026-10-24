@@ -1,0 +1,4 @@
+interface:
+  display_name: "Yahat MCP"
+  short_description: "Implement C++20 MCP servers with yahat"
+  default_prompt: "Use $yahat-mcp to integrate an MCP server into this C++20 project using its actual yahat dependency."

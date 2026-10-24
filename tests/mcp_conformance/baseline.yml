@@ -1,0 +1,12 @@
+# Optional-feature fixture gaps in mixed scenarios; never blanket-baseline a scenario.
+# No MRTR/client capability dependency is implemented or advertised. These probes
+# require test_missing_capability (sampling) and test_streaming_elicitation (MRTR).
+server:
+  - server-stateless:sep-2575-server-rejects-undeclared-capability
+  - server-stateless:sep-2575-missing-capability-http-400
+  - server-stateless:sep-2575-http-server-no-independent-requests-on-stream
+  # The caching scenario probes unadvertised prompts/resources unconditionally.
+  # Keep tools/list caching and all general cache-field checks enforced.
+  - caching:sep-2549-prompts-list-caching-hints
+  - caching:sep-2549-resources-list-caching-hints
+  - caching:sep-2549-resources-templates-list-caching-hints
