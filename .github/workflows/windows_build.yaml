@@ -45,7 +45,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
 
     defaults:
       run:
@@ -57,9 +57,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install dependencies with choco
-        run: |
-          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y --limit-output
+      # This image supplies CMake >= 4.2, required by the VS 2026 generator.
+      - name: Show CMake version
+        run: cmake --version
 
       - name: Install vcpkg
         run: |
@@ -71,7 +71,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vcpkg/installed
-          key: ${{ runner.os }}-vcpkg-boost-slim
+          key: ${{ runner.os }}-${{ runner.arch }}-vs2026-vcpkg-boost-slim
 
       - name: Install dependencies with vcpkg
         if: steps.cache-vcpkg.outputs.cache-hit != 'true'
@@ -95,7 +95,7 @@ jobs:
       - name: Configure CMake
         run: |
           cmake \
-            -G "Visual Studio 17 2022" \
+            -G "Visual Studio 18 2026" \
             -A x64 \
             -D_WIN32_WINNT=0x0A00 \
             -DYAHAT_WITH_TESTS=ON \
