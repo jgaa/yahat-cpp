@@ -1,0 +1,4 @@
+interface:
+  display_name: "Yahat REST API"
+  short_description: "Build REST APIs with yahat and Asio yield_context"
+  default_prompt: "Use $yahat-rest-api to implement REST endpoints with yahat using its stackful Asio request handlers and our application authentication."
