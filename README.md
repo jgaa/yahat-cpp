@@ -21,6 +21,7 @@ and MCP support. It runs on Linux, macOS and Windows. Still beta.
 | Typed MCP tools, cancellation and on-demand help | [MCP server](docs/mcp.md) |
 | A little chat app and its Docker image | [Yahat Chat](docs/chat.md) |
 | MCP integration and official conformance tests | [Local MCP validation](docs/mcp-testing.md) |
+| Helping a coding agent build REST endpoints | [The yahat-rest-api skill](.agents/skills/yahat-rest-api/SKILL.md) |
 | Helping a coding agent use yahat in another project | [The yahat-mcp skill](.agents/skills/yahat-mcp/SKILL.md) and [installation](.agents/skills/yahat-mcp/references/install.md) |
 
 Want working code? Have a look at the [API](examples/apiserver/apiserver.cpp),

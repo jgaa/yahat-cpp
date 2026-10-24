@@ -41,3 +41,8 @@ also do not rebuild the chat container. The container script builds only the
 The existing platform build configurations are preserved; these changes do not
 add the official MCP conformance runner to CI. See
 [local MCP testing](mcp-testing.md) for that suite.
+
+The Windows build uses the `windows-2025-vs2026` image and the
+`Visual Studio 18 2026` generator, with CMake supplied by that image. Its vcpkg
+cache is scoped to the runner architecture and compiler generation so a compiler
+migration does not reuse the previous generation's installed libraries.
