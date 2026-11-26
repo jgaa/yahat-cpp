@@ -59,8 +59,8 @@ jobs:
           # List releases so an empty repository is distinct from an API failure.
           # Drafts/prereleases do not establish the previous GA release boundary.
           previous_tag="$(gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-            --jq '[.[][] | select(.draft == false and .prerelease == false)] | max_by(.published_at) | .tag_name // empty')"
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" |
+            jq -r '[.[][] | select(.draft == false and .prerelease == false)] | max_by(.published_at) | .tag_name // empty')"
           previous_sha=""
           if [[ -n "$previous_tag" ]]; then
             previous_sha="$(git rev-parse --verify "refs/tags/${previous_tag}^{commit}")"
