@@ -97,7 +97,8 @@ string decompressGzip(string_view compressedData, size_t maxDecompressedBytes) {
 
         ret = inflate(&zs, 0);
 
-        if (ret == Z_STREAM_ERROR || ret == Z_DATA_ERROR || ret == Z_MEM_ERROR) {
+        // Z_BUF_ERROR means no progress is possible (e.g. truncated input).
+        if (ret != Z_OK && ret != Z_STREAM_END) {
             inflateEnd(&zs);
             throw std::runtime_error("Decompression error");
         }

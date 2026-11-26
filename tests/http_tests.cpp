@@ -9,6 +9,15 @@ namespace http = boost::beast::http;
 using tcp = net::ip::tcp;
 using namespace yahat;
 
+// Complete gzip members, including their CRC and size trailers.
+const std::string gzipEmpty{
+    "\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff"
+    "\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00", 20};
+const std::string gzip9000Xs{
+    "\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff\xed\xc1\x01\x0d"
+    "\x00\x00\x00\xc2\xa0\xda\x8f\x6f\x0f\x07\x14\x00\x00\x00"
+    "\x00\x00\x00\x00\x00\xfc\x1b\xd4\x71\x8b\x12\x28\x23\x00\x00", 43};
+
 class Handler : public RequestHandler {
 public:
     explicit Handler(std::function<Response(const Request&)> callback) : callback_{std::move(callback)} {}
@@ -45,7 +54,8 @@ protected:
         started_ = true;
     }
 
-    http::response<http::string_body> exchange(http::request<http::string_body> request) {
+    http::response<http::string_body> exchange(http::request<http::string_body> request,
+                                             boost::system::error_code expected_error = {}) {
         net::io_context ctx;
         boost::beast::tcp_stream stream{ctx};
         boost::system::error_code failure;
@@ -73,7 +83,7 @@ protected:
             http::async_read(stream, buffer, response, yield[failure]);
         }, net::detached);
         ctx.run();
-        EXPECT_FALSE(failure) << failure.message();
+        EXPECT_EQ(failure, expected_error) << failure.message();
         return response;
     }
 
@@ -81,6 +91,61 @@ protected:
     std::unique_ptr<HttpServer> server_;
     bool started_ = false;
 };
+
+TEST_F(HttpTest, TruncatedGzipDoesNotBlockWorker) {
+    config_.num_http_threads = 1;
+    server_->addRoute("/health", std::make_shared<Handler>([](const Request&) { return Response{}; }));
+    start();
+
+    // Every incomplete prefix, including no input and missing trailer bytes,
+    // must be rejected before authentication even with only one worker.
+    for (const auto& member : {gzipEmpty, gzip9000Xs}) {
+        for (size_t length = 0; length < member.size(); ++length) {
+            SCOPED_TRACE(length);
+            http::request<http::string_body> request{http::verb::post, "/private", 11};
+            request.set(http::field::content_encoding, "gzip");
+            request.body() = member.substr(0, length);
+            exchange(request, http::error::end_of_stream);
+
+            http::request<http::string_body> health{http::verb::get, "/health", 11};
+            health.set(http::field::authorization, "Bearer good");
+            EXPECT_EQ(exchange(health).result_int(), 200);
+        }
+    }
+}
+
+TEST_F(HttpTest, ValidGzipBodiesAreDecodedIncludingEmptyMemberAndMultipleBuffers) {
+    config_.max_decompressed_size = 9000;
+    server_->addRoute("/echo", std::make_shared<Handler>([](const Request& request) {
+        Response response;
+        response.body = request.body;
+        response.generate_status_body = false;
+        return response;
+    }));
+    start();
+    for (const auto& member : {gzipEmpty, gzip9000Xs}) {
+        http::request<http::string_body> request{http::verb::post, "/echo", 11};
+        request.set(http::field::authorization, "Bearer good");
+        request.set(http::field::content_encoding, "gzip");
+        request.body() = member;
+        const auto response = exchange(request);
+        EXPECT_EQ(response.result_int(), 200);
+        EXPECT_EQ(response.body(), member == gzipEmpty ? std::string{} : std::string(9000, 'x'));
+    }
+}
+
+TEST_F(HttpTest, InvalidAndOversizedGzipBodiesAreRejected) {
+    config_.max_decompressed_size = 8999;
+    start();
+    auto corrupt = gzip9000Xs;
+    corrupt[35] ^= 1; // Corrupt the CRC while retaining the compressed data.
+    for (const auto& body : {std::string{"not gzip"}, corrupt, gzip9000Xs}) {
+        http::request<http::string_body> request{http::verb::post, "/private", 11};
+        request.set(http::field::content_encoding, "gzip");
+        request.body() = body;
+        exchange(request, http::error::end_of_stream);
+    }
+}
 
 TEST_F(HttpTest, ParserBodyLimitReturnsPayloadTooLarge) {
     config_.max_request_body_size = 16;
